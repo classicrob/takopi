@@ -93,39 +93,37 @@ def attach_id(item_id: Optional[int], line: str) -> str:
 
 
 def format_item_action_line(etype: str, item: dict[str, Any]) -> str | None:
-    itype = item["type"]
-    if itype == "command_execution":
-        command = format_command(item["command"])
-        if etype == "item.started":
+    match (item["type"], etype):
+        case ("command_execution", "item.started"):
+            command = format_command(item["command"])
             return f"{STATUS_RUNNING} running: {command}"
-        if etype == "item.completed":
+        case ("command_execution", "item.completed"):
+            command = format_command(item["command"])
             exit_code = item["exit_code"]
             exit_part = f" (exit {exit_code})" if exit_code is not None else ""
             return f"{STATUS_DONE} ran: {command}{exit_part}"
-        return None
-
-    if itype == "mcp_tool_call":
-        name = format_tool_call(item["server"], item["tool"])
-        if etype == "item.started":
+        case ("mcp_tool_call", "item.started"):
+            name = format_tool_call(item["server"], item["tool"])
             return f"{STATUS_RUNNING} tool: {name}"
-        if etype == "item.completed":
+        case ("mcp_tool_call", "item.completed"):
+            name = format_tool_call(item["server"], item["tool"])
             return f"{STATUS_DONE} tool: {name}"
-        return None
-
-    return None
+        case _:
+            return None
 
 
 def format_item_completed_line(item: dict[str, Any]) -> str | None:
-    itype = item["type"]
-    if itype == "web_search":
-        query = format_query(item["query"])
-        return f"{STATUS_DONE} searched: {query}"
-    if itype == "file_change":
-        return f"{STATUS_DONE} {format_file_change(item['changes'])}"
-    if itype == "error":
-        warning = truncate(item["message"], 120)
-        return f"{STATUS_DONE} warning: {warning}"
-    return None
+    match item["type"]:
+        case "web_search":
+            query = format_query(item["query"])
+            return f"{STATUS_DONE} searched: {query}"
+        case "file_change":
+            return f"{STATUS_DONE} {format_file_change(item['changes'])}"
+        case "error":
+            warning = truncate(item["message"], 120)
+            return f"{STATUS_DONE} warning: {warning}"
+        case _:
+            return None
 
 
 @dataclass
@@ -144,46 +142,40 @@ def render_event_cli(
     event: dict[str, Any],
     state: ExecRenderState,
 ) -> list[str]:
-    etype = event["type"]
     lines: list[str] = []
 
-    if etype == "thread.started":
-        return ["thread started"]
+    etype = event["type"]
+    match etype:
+        case "thread.started":
+            return ["thread started"]
+        case "turn.started":
+            return ["turn started"]
+        case "turn.completed":
+            return ["turn completed"]
+        case "turn.failed":
+            return [f"turn failed: {event['error']['message']}"]
+        case "error":
+            return [f"stream error: {event['message']}"]
+        case "item.started" | "item.updated" | "item.completed":
+            item = event["item"]
+            record_item(state, item)
 
-    if etype == "turn.started":
-        return ["turn started"]
-
-    if etype == "turn.completed":
-        return ["turn completed"]
-
-    if etype == "turn.failed":
-        error = event["error"]["message"]
-        return [f"turn failed: {error}"]
-
-    if etype == "error":
-        return [f"stream error: {event['message']}"]
-
-    if etype in {"item.started", "item.updated", "item.completed"}:
-        item = event["item"]
-        record_item(state, item)
-
-        itype = item["type"]
-        item_num = extract_numeric_id(item["id"], state.last_turn)
-
-        if itype == "agent_message" and etype == "item.completed":
-            lines.append("assistant:")
-            lines.extend(indent(item["text"], "  ").splitlines())
-
-        else:
-            action_line = format_item_action_line(etype, item)
-            if action_line is not None:
-                lines.append(attach_id(item_num, action_line))
-            elif etype == "item.completed":
-                completed_line = format_item_completed_line(item)
-                if completed_line is not None:
-                    lines.append(attach_id(item_num, completed_line))
-
-    return lines
+            item_num = extract_numeric_id(item["id"], state.last_turn)
+            match (item["type"], etype):
+                case ("agent_message", "item.completed"):
+                    lines.append("assistant:")
+                    lines.extend(indent(item["text"], "  ").splitlines())
+                case _:
+                    action_line = format_item_action_line(etype, item)
+                    if action_line is not None:
+                        lines.append(attach_id(item_num, action_line))
+                    elif etype == "item.completed":
+                        completed_line = format_item_completed_line(item)
+                        if completed_line is not None:
+                            lines.append(attach_id(item_num, completed_line))
+            return lines
+        case _:
+            return lines
 
 
 class ExecProgressRenderer:
@@ -194,31 +186,29 @@ class ExecProgressRenderer:
 
     def note_event(self, event: dict[str, Any]) -> bool:
         etype = event["type"]
-
-        if etype in {"thread.started", "turn.started"}:
-            return True
-
-        if etype in {"item.started", "item.updated", "item.completed"}:
-            item = event["item"]
-            record_item(self.state, item)
-            itype = item["type"]
-            item_id = extract_numeric_id(item["id"], self.state.last_turn)
-
-            if itype == "agent_message":
-                return False
-
-            action_line = format_item_action_line(etype, item)
-            if action_line is not None:
-                self.state.recent_actions.append(attach_id(item_id, action_line))
+        match etype:
+            case "thread.started" | "turn.started":
                 return True
-
-            if etype == "item.completed":
-                completed_line = format_item_completed_line(item)
-                if completed_line is not None:
-                    self.state.recent_actions.append(attach_id(item_id, completed_line))
-                    return True
-
-        return False
+            case "item.started" | "item.updated" | "item.completed":
+                item = event["item"]
+                record_item(self.state, item)
+                item_id = extract_numeric_id(item["id"], self.state.last_turn)
+                match item["type"]:
+                    case "agent_message":
+                        return False
+                    case _:
+                        action_line = format_item_action_line(etype, item)
+                        if action_line is not None:
+                            self.state.recent_actions.append(attach_id(item_id, action_line))
+                            return True
+                        if etype == "item.completed":
+                            completed_line = format_item_completed_line(item)
+                            if completed_line is not None:
+                                self.state.recent_actions.append(attach_id(item_id, completed_line))
+                                return True
+                        return False
+            case _:
+                return False
 
     def render_progress(self, elapsed_s: float) -> str:
         header = format_header(elapsed_s, self.state.last_turn, label="working")
