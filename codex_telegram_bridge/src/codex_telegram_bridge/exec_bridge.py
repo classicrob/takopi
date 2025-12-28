@@ -151,16 +151,6 @@ class ProgressEditor:
             self._stop.wait(0.2)
 
 
-def _typing_loop(bot: TelegramClient, chat_id: int, stop_evt: threading.Event) -> None:
-    while not stop_evt.is_set():
-        try:
-            bot.send_chat_action(chat_id=chat_id, action="typing")
-        except Exception as e:
-            log(f"[typing] send_chat_action failed chat_id={chat_id}: {e}")
-            log_debug(f"[typing] send_chat_action failed chat_id={chat_id}: {e}")
-        stop_evt.wait(4.0)
-
-
 class CodexExecRunner:
     """
     Runs Codex in non-interactive mode:
@@ -430,15 +420,6 @@ def run(
         silent_progress = progress_silent
         loud_final = final_notify
 
-        typing_stop = threading.Event()
-        typing_thread = threading.Thread(
-            target=_typing_loop,
-            args=(bot, chat_id, typing_stop),
-            daemon=True,
-        )
-        typing_thread.start()
-        log_debug("[typing] thread started")
-
         started_at = time.monotonic()
         session_box: dict[str, Optional[str]] = {"id": resume_session}
         progress_renderer = ExecProgressRenderer(max_actions=5)
@@ -488,9 +469,6 @@ def run(
                 progress.set_markdown(msg)
 
         def _stop_background() -> None:
-            typing_stop.set()
-            typing_thread.join(timeout=1.0)
-            log_debug("[typing] thread stopped")
             if progress is not None:
                 progress.stop()
                 log_debug("[progress] thread stopped")

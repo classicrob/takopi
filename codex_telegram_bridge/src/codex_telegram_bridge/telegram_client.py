@@ -116,13 +116,13 @@ class TelegramClient:
         rendered_text, entities = render_markdown(text)
         limit = min(chunk_len, TELEGRAM_HARD_LIMIT)
         if len(rendered_text) > limit:
-            # Keep a tail section to preserve the "resume: `...`" line at the end.
             # If we truncate, drop entities to avoid offset gymnastics.
+            # Preserve the final `resume: `...`` line if present.
             sep = "\n" + ELLIPSIS + "\n"
-            tail_len = min(400, max(120, limit // 3))
-            tail = rendered_text[-tail_len:]
-            head_len = max(0, limit - len(sep) - len(tail))
-            rendered_text = rendered_text[:head_len] + sep + tail
+            lines = rendered_text.splitlines()
+            tail = lines[-1] if lines else ""
+            max_head = max(0, limit - len(sep) - len(tail))
+            rendered_text = "".join([rendered_text[:max_head], sep, tail])
             entities = None
 
         msg = self.send_message(
@@ -133,10 +133,3 @@ class TelegramClient:
             entities=entities or None,
         )
         return [msg]
-
-    def send_chat_action(self, chat_id: int, action: str = "typing") -> Dict[str, Any]:
-        params: Dict[str, Any] = {
-            "chat_id": chat_id,
-            "action": action,
-        }
-        return self._call("sendChatAction", params)
