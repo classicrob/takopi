@@ -91,7 +91,7 @@ def attach_id(item_id: Optional[int], line: str) -> str:
     return f"[{item_id if item_id is not None else '?'}] {line}"
 
 def format_reasoning(text: str) -> str:
-    return f"_{one_line(text)}_"
+    return f"_{text}_"
 
 
 def format_item_action_line(etype: str, item: dict[str, Any]) -> str | None:
