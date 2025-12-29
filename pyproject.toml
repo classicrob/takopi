@@ -41,4 +41,11 @@ include = ["src/takopi", "readme.md", "LICENSE"]
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.14.10",
+    "ty>=0.0.7",
 ]
+
+[tool.pytest.ini_options]
+addopts = ["--cov=takopi", "--cov-report=term-missing"]
+testpaths = ["tests"]
