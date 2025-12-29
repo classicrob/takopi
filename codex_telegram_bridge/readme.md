@@ -1,54 +1,99 @@
-# Telegram Codex Bridge (Codex)
+# Codex Telegram Bridge
 
-Route Telegram replies back into Codex sessions using non-interactive
-`codex exec` + `codex exec resume`.
+A Telegram bot that bridges messages to [Codex](https://github.com/openai/codex) sessions using non-interactive `codex exec` and `codex exec resume`.
 
-The bridge does not persist routes. It resumes only when the incoming
-message (or the replied-to bot message) contains an explicit `resume: <uuid>`
-line.
+## Features
 
-## Install
+- **Stateless Resume**: No database required—sessions are resumed via `resume: <uuid>` lines embedded in messages
+- **Progress Updates**: Real-time progress edits showing commands, tools, and elapsed time
+- **Markdown Rendering**: Full Telegram-compatible markdown with entity support
+- **Concurrency**: Handles multiple conversations with per-session serialization
+- **Token Redaction**: Automatically redacts Telegram tokens from logs
 
-1. Ensure `uv` is installed.
-2. From this folder, run the entrypoints with `uv run` (uses `pyproject.toml` deps).
-3. Put your Telegram credentials in `~/.codex/telegram.toml`.
+## Quick Start
 
-Example `~/.codex/telegram.toml`:
+### Prerequisites
+
+- Python 3.12+
+- [uv](https://github.com/astral-sh/uv) package manager
+- Codex CLI on PATH
+
+### Installation
+
+```bash
+# Clone and enter the directory
+cd codex-telegram-bridge
+
+# Run directly with uv (installs deps automatically)
+uv run exec-bridge --help
+```
+
+### Configuration
+
+Create `~/.codex/telegram.toml`:
 
 ```toml
-bot_token = "123:abc"
+bot_token = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
 chat_id = 123456789
 ```
 
-`chat_id` is used both for allowed messages and startup notifications.
+| Key | Description |
+|-----|-------------|
+| `bot_token` | Telegram Bot API token from [@BotFather](https://t.me/BotFather) |
+| `chat_id` | Allowed chat ID (also used for startup notifications) |
 
-## Option 1: exec/resume
-
-Run:
+### Running
 
 ```bash
 uv run exec-bridge
 ```
 
-Optional flags:
+#### Options
 
-- `--final-notify/--no-final-notify` (default notify via new message)
-- `--debug/--no-debug` (default no debug logging; use `--debug | tee debug.log` to capture)
-- `--cd PATH` (pass through to `codex --cd`)
-- `--model NAME` (pass through to `codex exec`)
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--final-notify` / `--no-final-notify` | `--final-notify` | Send final response as new message (vs. edit) |
+| `--debug` / `--no-debug` | `--no-debug` | Enable verbose logging |
+| `--cd PATH` | cwd | Working directory for Codex |
+| `--model NAME` | (codex default) | Model to use |
 
-Progress updates are always sent silently.
-Pending updates are always ignored on startup.
-Progress updates are throttled to roughly every 2 seconds.
+## Usage
 
-To resume an existing thread without a database, reply with (or include) the session id shown at the end of the bot response:
+### New Conversation
 
-`resume: \`019b66fc-64c2-7a71-81cd-081c504cfeb2\``
+Send any message to your bot. The bridge will:
 
-## Files
-- `src/codex_telegram_bridge/constants.py`: limits and config path constants
-- `src/codex_telegram_bridge/config.py`: config loading and chat-id parsing helpers
-- `src/codex_telegram_bridge/exec_render.py`: renderers for codex exec JSONL events
-- `src/codex_telegram_bridge/rendering.py`: markdown rendering
-- `src/codex_telegram_bridge/telegram_client.py`: Telegram Bot API client
-- `src/codex_telegram_bridge/exec_bridge.py`: codex exec + resume bridge
+1. Send a silent progress message
+2. Stream events from `codex exec`
+3. Update progress every ~2 seconds
+4. Send final response with session ID
+
+### Resume a Session
+
+Reply to a bot message (containing `resume: <uuid>`), or include the resume line in your message:
+
+```
+resume: `019b66fc-64c2-7a71-81cd-081c504cfeb2`
+```
+
+## Behavior Notes
+
+- **Startup**: Pending updates are drained (ignored) on startup
+- **Progress**: Updates are throttled to ~2s intervals, sent silently
+- **Notifications**: Codex's built-in notify is disabled (bridge handles it)
+
+## Development
+
+See [`src/codex_telegram_bridge/developing.md`](src/codex_telegram_bridge/developing.md) for architecture details.
+
+```bash
+# Run tests
+uv run pytest
+
+# Run with debug logging
+uv run exec-bridge --debug 2>&1 | tee debug.log
+```
+
+## License
+
+MIT
