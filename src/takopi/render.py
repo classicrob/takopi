@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import textwrap
 from collections import deque
+from pathlib import Path
 from typing import Callable
 
 from .model import Action, ActionEvent, ResumeToken, StartedEvent, TakopiEvent
@@ -18,7 +19,33 @@ HARD_BREAK = "  \n"
 MAX_PROGRESS_CMD_LEN = 300
 MAX_FILE_CHANGES_INLINE = 3
 
-FILE_CHANGE_PREFIX = {"add": "+", "delete": "-", "update": "~"}
+FILE_CHANGE_VERB = {"add": "added", "delete": "deleted", "update": "updated"}
+_ABSOLUTE_PATH_PREFIXES = ("Users/", "home/", "private/", "var/", "etc/", "opt/", "usr/")
+
+
+def format_changed_file_path(path: str, *, base_dir: Path | None = None) -> str:
+    raw = path.strip()
+    if raw.startswith("./"):
+        raw = raw[2:]
+
+    # Some clients may accidentally prefix "~" onto an absolute path (e.g. "~" + "/Users/…").
+    if raw.startswith("~/") and raw[2:].startswith(_ABSOLUTE_PATH_PREFIXES):
+        raw = "/" + raw[2:]
+
+    base = Path.cwd() if base_dir is None else base_dir
+    try:
+        raw_path = Path(raw)
+    except Exception:
+        return f"`{raw}`"
+
+    if raw_path.is_absolute():
+        try:
+            raw_path = raw_path.relative_to(base)
+            raw = raw_path.as_posix()
+        except Exception:
+            pass
+
+    return f"`{raw}`"
 
 
 def format_elapsed(elapsed_s: float) -> str:
@@ -82,13 +109,13 @@ def format_file_change_title(action: Action, *, command_width: int | None) -> st
             if not isinstance(path, str) or not path:
                 continue
             kind = raw.get("kind")
-            prefix = FILE_CHANGE_PREFIX.get(kind, "~") if isinstance(kind, str) else "~"
-            rendered.append(f"{prefix}{path}")
+            verb = FILE_CHANGE_VERB.get(kind, "updated") if isinstance(kind, str) else "updated"
+            rendered.append(f"{verb} {format_changed_file_path(path)}")
 
         if rendered:
             if len(rendered) > MAX_FILE_CHANGES_INLINE:
                 remaining = len(rendered) - MAX_FILE_CHANGES_INLINE
-                rendered = rendered[:MAX_FILE_CHANGES_INLINE] + [f"…(+{remaining})"]
+                rendered = rendered[:MAX_FILE_CHANGES_INLINE] + [f"…({remaining} more)"]
             inline = shorten(", ".join(rendered), command_width)
             return f"files: {inline}"
 

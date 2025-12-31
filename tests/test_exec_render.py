@@ -1,5 +1,6 @@
 from typing import cast
 from types import SimpleNamespace
+from pathlib import Path
 
 from takopi.markdown import render_markdown
 from takopi.model import TakopiEvent
@@ -79,8 +80,30 @@ def test_render_event_cli_handles_action_kinds() -> None:
         for line in out
     )
     assert any("tool: github.search_issues" in line for line in out)
-    assert any("files: +README.md, ~src/compute_answer.py" in line for line in out)
+    assert any(
+        "files: added `README.md`, updated `src/compute_answer.py`" in line for line in out
+    )
     assert any(line.startswith("✗ stream error") for line in out)
+
+
+def test_file_change_renders_relative_paths_inside_cwd() -> None:
+    readme_abs = str(Path.cwd() / "README.md")
+    weird_abs = "~" + readme_abs
+    out = render_event_cli(
+        action_completed(
+            "f-abs",
+            "file_change",
+            "README.md",
+            ok=True,
+            detail={
+                "changes": [
+                    {"path": readme_abs, "kind": "update"},
+                    {"path": weird_abs, "kind": "update"},
+                ]
+            },
+        )
+    )
+    assert any("files: updated `README.md`, updated `README.md`" in line for line in out)
 
 
 def test_progress_renderer_renders_progress_and_final() -> None:
