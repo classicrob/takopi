@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import time
-import inspect
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
@@ -28,12 +27,6 @@ def _resolve_resume(
     return runner.extract_resume(text) or runner.extract_resume(reply_text)
 
 
-def _summarize_error(error: str | None) -> str:
-    if not error:
-        return "error"
-    return error
-
-
 def _log_runner_event(evt: TakopiEvent) -> None:
     for line in render_event_cli(evt):
         logger.info("[runner] %s", line)
@@ -41,7 +34,7 @@ def _log_runner_event(evt: TakopiEvent) -> None:
         if evt.ok:
             logger.info("[runner] done")
         else:
-            logger.info("[runner] error: %s", _summarize_error(evt.error))
+            logger.info("[runner] error: %s", evt.error or "error")
 
 
 def _is_cancel_command(text: str) -> bool:
@@ -516,7 +509,7 @@ async def handle_message(
         await cfg.bot.delete_message(chat_id=chat_id, message_id=progress_id)
 
 
-async def poll_updates(cfg: BridgeConfig):
+async def poll_updates(cfg: BridgeConfig) -> AsyncIterator[dict[str, Any]]:
     offset: int | None = None
     offset = await _drain_backlog(cfg, offset)
     await _send_startup(cfg)
@@ -605,7 +598,7 @@ async def _wait_for_resume(running_task: RunningTask) -> ResumeToken | None:
 
 async def _send_with_resume(
     bot: BotClient,
-    enqueue: Callable[[int, int, str, ResumeToken], Awaitable[None] | None],
+    enqueue: Callable[[int, int, str, ResumeToken], Awaitable[None]],
     running_task: RunningTask,
     chat_id: int,
     user_msg_id: int,
@@ -620,9 +613,7 @@ async def _send_with_resume(
             disable_notification=True,
         )
         return
-    result = enqueue(chat_id, user_msg_id, text, resume)
-    if inspect.isawaitable(result):
-        await result
+    await enqueue(chat_id, user_msg_id, text, resume)
 
 
 async def _run_main_loop(

@@ -72,14 +72,30 @@ class TelegramClient:
             return None
 
         try:
-            payload = resp.json()
-        except Exception as e:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            body = resp.text
             logger.error(
-                "[telegram] bad response method=%s status=%s url=%s: %s",
+                "[telegram] http error method=%s status=%s url=%s: %s body=%r",
                 method,
                 resp.status_code,
                 resp.request.url,
                 e,
+                body,
+            )
+            return None
+
+        try:
+            payload = resp.json()
+        except Exception as e:
+            body = resp.text
+            logger.error(
+                "[telegram] bad response method=%s status=%s url=%s: %s body=%r",
+                method,
+                resp.status_code,
+                resp.request.url,
+                e,
+                body,
             )
             return None
 

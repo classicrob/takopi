@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import tomllib
 from pathlib import Path
 
@@ -38,8 +39,7 @@ def _maybe_migrate_legacy(legacy_path: Path, target_path: Path) -> None:
         return
     try:
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        raw = legacy_path.read_text(encoding="utf-8")
-        target_path.write_text(raw, encoding="utf-8")
+        shutil.move(legacy_path, target_path)
     except OSError as e:
         raise ConfigError(
             f"Failed to migrate legacy config {legacy_path} to {target_path}: {e}"
@@ -64,19 +64,23 @@ def load_telegram_config(path: str | Path | None = None) -> tuple[dict, Path]:
         cfg_path = Path(path).expanduser()
         return _read_config(cfg_path), cfg_path
 
-    for legacy, target in zip(_legacy_candidates(), _config_candidates(), strict=True):
+    config_candidates = _config_candidates()
+    legacy_candidates = _legacy_candidates()
+    for legacy, target in zip(legacy_candidates, config_candidates, strict=True):
         _maybe_migrate_legacy(legacy, target)
 
-    candidates = _config_candidates()
-    for candidate in candidates:
+    for candidate in config_candidates:
         if candidate.is_file():
             return _read_config(candidate), candidate
 
-    legacy_candidates = _legacy_candidates()
     for candidate in legacy_candidates:
         if candidate.is_file():
             return _read_config(candidate), candidate
 
-    if len(candidates) == 1:
-        raise ConfigError("Missing takopi config.")
-    raise ConfigError("Missing takopi config.")
+    checked: list[Path] = []
+    for candidate in [*config_candidates, *legacy_candidates]:
+        if candidate in checked:
+            continue
+        checked.append(candidate)
+    checked_display = ", ".join(str(candidate) for candidate in checked)
+    raise ConfigError(f"Missing takopi config. Checked: {checked_display}")
