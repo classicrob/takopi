@@ -1,5 +1,11 @@
 # changelog
 
+## v0.5.3 (2026-01-02)
+
+### changes
+
+- default claude allowed tools to `["Bash", "Read", "Edit", "Write"]` when not configured
+
 ## v0.5.2 (2026-01-02)
 
 ### changes
