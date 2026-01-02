@@ -49,7 +49,7 @@ The orchestrator module containing:
 - `/cancel` routes by reply-to progress message id (accepts extra text)
 - `/{engine}` on the first line selects the engine for new threads
 - Progress edits are throttled to 2s intervals and only run when new events arrive
-- Resume tokens are runner-formatted command lines (e.g., `` `codex resume <token>` ``)
+- Resume tokens are runner-formatted command lines (e.g., `` `codex resume <token>` ``, `` `claude --resume <token>` ``, `` `pi --session <path>` ``)
 - Resume parsing polls all runners via `AutoRouter.resolve_resume()` and routes to the first match
 - Bot command menu is synced on startup (`cancel` + engine commands)
 
@@ -92,6 +92,13 @@ The orchestrator module containing:
 - Stderr is drained into a bounded tail (debug logging only)
 - Translation errors abort the run; keep event normalization defensive
 
+### `runners/pi.py` - Pi runner
+
+| Component | Purpose |
+|-----------|---------|
+| `PiRunner` | Spawns `pi --print --mode json`, streams JSONL, emits takopi events |
+| `translate_pi_event()` | Normalizes Pi JSONL into the takopi event schema |
+
 ### `model.py` / `runner.py` - Core domain types
 
 | File | Purpose |
@@ -113,6 +120,8 @@ Auto-discovers runner modules in `takopi.runners` that export `BACKEND`.
 | File | Purpose |
 |------|---------|
 | `codex.py` | Codex runner (JSONL → takopi events) + per-resume locks |
+| `claude.py` | Claude runner (JSONL → takopi events) + per-resume locks |
+| `pi.py` | Pi runner (JSONL → takopi events) + per-resume locks |
 | `mock.py` | Mock runner for tests/demos |
 
 ### `config.py` - Configuration loading
@@ -166,7 +175,7 @@ handle_message() spawned as task with selected runner
 Send initial progress message (silent)
     ↓
 runner.run(prompt, resume_token)
-    ├── Spawns engine subprocess (e.g., codex exec --json)
+    ├── Spawns engine subprocess (e.g., codex exec --json, pi --print --mode json)
     ├── Streams JSONL from stdout
     ├── Normalizes JSONL -> takopi events
     ├── Yields Takopi events (async iterator)
@@ -184,8 +193,8 @@ Send/edit final message
 ### Resume Flow
 
 Same as above; auto-router polls all runners to extract resume tokens:
-- Router returns first matching token (e.g. `` `claude --resume <id>` `` routes to Claude)
-- Selected runner spawns with resume (e.g. `codex exec --json resume <token> -`)
+- Router returns first matching token (e.g. `` `claude --resume <id>` `` routes to Claude, `` `pi --session <path>` `` routes to Pi)
+- Selected runner spawns with resume (e.g. `codex exec --json resume <token> -`, `pi --print --mode json --session <path> <prompt>`)
 - Per-token lock serializes concurrent resumes on the same thread
 
 ## Error Handling
@@ -193,6 +202,7 @@ Same as above; auto-router polls all runners to extract resume tokens:
 | Scenario | Behavior |
 |----------|----------|
 | `codex exec` fails (rc != 0) | Emits a warning `action` plus `completed(ok=false, error=...)` |
+| `pi` fails (rc != 0) | Emits a warning `action` plus `completed(ok=false, error=...)` |
 | Telegram API error | Logged, edit skipped (progress continues) |
 | Cancellation | Cancel scope terminates the process group (POSIX) and renders `cancelled` |
 | Errors in handler | Final render uses `status=error` and preserves resume tokens when known |

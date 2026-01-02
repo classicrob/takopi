@@ -4,7 +4,8 @@
 
 ### changes
 
-- TBD
+- add a pi runner via the `pi` CLI with jsonl streaming and resume support
+- document the pi runner, event mapping, and jsonl stream capture tips
 
 ### fixes
 

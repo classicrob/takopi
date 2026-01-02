@@ -1,0 +1,484 @@
+from __future__ import annotations
+
+import logging
+import os
+import re
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+from ..backends import EngineBackend, EngineConfig
+from ..config import ConfigError
+from ..model import (
+    Action,
+    ActionEvent,
+    ActionKind,
+    ActionLevel,
+    ActionPhase,
+    CompletedEvent,
+    EngineId,
+    ResumeToken,
+    StartedEvent,
+    TakopiEvent,
+)
+from ..runner import JsonlSubprocessRunner, ResumeTokenMixin, Runner
+from ..utils.paths import relativize_command, relativize_path
+
+logger = logging.getLogger(__name__)
+
+ENGINE: EngineId = EngineId("pi")
+STDERR_TAIL_LINES = 200
+
+_RESUME_RE = re.compile(r"(?im)^\s*`?pi\s+--session\s+(?P<token>.+?)`?\s*$")
+
+
+@dataclass(slots=True)
+class PiStreamState:
+    resume: ResumeToken
+    pending_actions: dict[str, Action] = field(default_factory=dict)
+    last_assistant_text: str | None = None
+    last_assistant_error: str | None = None
+    last_usage: dict[str, Any] | None = None
+    started: bool = False
+    note_seq: int = 0
+
+
+def _action_event(
+    *,
+    phase: ActionPhase,
+    action: Action,
+    ok: bool | None = None,
+    message: str | None = None,
+    level: ActionLevel | None = None,
+) -> ActionEvent:
+    return ActionEvent(
+        engine=ENGINE,
+        action=action,
+        phase=phase,
+        ok=ok,
+        message=message,
+        level=level,
+    )
+
+
+def _extract_text_blocks(content: Any) -> str | None:
+    if not isinstance(content, list):
+        return None
+    parts: list[str] = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "text":
+            continue
+        text = item.get("text")
+        if isinstance(text, str) and text:
+            parts.append(text)
+    if not parts:
+        return None
+    return "".join(parts).strip() or None
+
+
+def _assistant_error(message: dict[str, Any]) -> str | None:
+    stop_reason = message.get("stopReason")
+    if stop_reason in {"error", "aborted"}:
+        error = message.get("errorMessage")
+        if isinstance(error, str) and error:
+            return error
+        return f"pi run {stop_reason}"
+    return None
+
+
+def _tool_kind_and_title(
+    name: str,
+    args: dict[str, Any],
+) -> tuple[ActionKind, str]:
+    tool = name.lower()
+    if tool == "bash":
+        command = args.get("command")
+        return "command", relativize_command(str(command or "bash"))
+    if tool in {"edit", "write"}:
+        path = args.get("path")
+        if path:
+            return "file_change", relativize_path(str(path))
+        return "file_change", tool
+    if tool == "read":
+        path = args.get("path")
+        if path:
+            return "tool", f"read: `{relativize_path(str(path))}`"
+        return "tool", "read"
+    if tool == "grep":
+        pattern = args.get("pattern")
+        return "tool", f"grep: {pattern}" if pattern else "grep"
+    if tool == "find":
+        pattern = args.get("pattern")
+        return "tool", f"find: {pattern}" if pattern else "find"
+    if tool == "ls":
+        path = args.get("path")
+        if path:
+            return "tool", f"ls: `{relativize_path(str(path))}`"
+        return "tool", "ls"
+    return "tool", name
+
+
+def _last_assistant_message(messages: Any) -> dict[str, Any] | None:
+    if not isinstance(messages, list):
+        return None
+    for item in reversed(messages):
+        if isinstance(item, dict) and item.get("role") == "assistant":
+            return item
+    return None
+
+
+def translate_pi_event(
+    event: dict[str, Any],
+    *,
+    title: str,
+    meta: dict[str, Any] | None,
+    state: PiStreamState,
+) -> list[TakopiEvent]:
+    out: list[TakopiEvent] = []
+    if not state.started:
+        out.append(
+            StartedEvent(
+                engine=ENGINE,
+                resume=state.resume,
+                title=title,
+                meta=meta or None,
+            )
+        )
+        state.started = True
+
+    etype = event.get("type")
+
+    if etype == "tool_execution_start":
+        tool_id = event.get("toolCallId")
+        tool_name = event.get("toolName")
+        args = event.get("args") or {}
+        if not isinstance(args, dict):
+            args = {}
+        if isinstance(tool_id, str) and tool_id:
+            name = str(tool_name or "tool")
+            kind, title_str = _tool_kind_and_title(name, args)
+            detail: dict[str, Any] = {"tool_name": name, "args": args}
+            if kind == "file_change":
+                path = args.get("path")
+                if path:
+                    detail["changes"] = [{"path": str(path), "kind": "update"}]
+            action = Action(id=tool_id, kind=kind, title=title_str, detail=detail)
+            state.pending_actions[action.id] = action
+            out.append(_action_event(phase="started", action=action))
+        return out
+
+    if etype == "tool_execution_end":
+        tool_id = event.get("toolCallId")
+        tool_name = event.get("toolName")
+        if isinstance(tool_id, str) and tool_id:
+            action = state.pending_actions.pop(tool_id, None)
+            name = str(tool_name or "tool")
+            if action is None:
+                action = Action(id=tool_id, kind="tool", title=name, detail={})
+            detail = dict(action.detail)
+            detail["result"] = event.get("result")
+            detail["is_error"] = event.get("isError")
+            is_error = event.get("isError") is True
+            out.append(
+                _action_event(
+                    phase="completed",
+                    action=Action(
+                        id=action.id,
+                        kind=action.kind,
+                        title=action.title,
+                        detail=detail,
+                    ),
+                    ok=not is_error,
+                )
+            )
+        return out
+
+    if etype == "message_end":
+        message = event.get("message")
+        if isinstance(message, dict) and message.get("role") == "assistant":
+            text = _extract_text_blocks(message.get("content"))
+            if text:
+                state.last_assistant_text = text
+            usage = message.get("usage")
+            if isinstance(usage, dict):
+                state.last_usage = usage
+            error = _assistant_error(message)
+            if error:
+                state.last_assistant_error = error
+        return out
+
+    if etype == "agent_end":
+        assistant = _last_assistant_message(event.get("messages"))
+        if assistant:
+            text = _extract_text_blocks(assistant.get("content"))
+            if text:
+                state.last_assistant_text = text
+            usage = assistant.get("usage")
+            if isinstance(usage, dict):
+                state.last_usage = usage
+            error = _assistant_error(assistant)
+            if error:
+                state.last_assistant_error = error
+
+        ok = state.last_assistant_error is None
+        error = state.last_assistant_error
+        answer = state.last_assistant_text or ""
+
+        out.append(
+            CompletedEvent(
+                engine=ENGINE,
+                ok=ok,
+                answer=answer,
+                resume=state.resume,
+                error=error,
+                usage=state.last_usage,
+            )
+        )
+        return out
+
+    return out
+
+
+class PiRunner(ResumeTokenMixin, JsonlSubprocessRunner):
+    engine: EngineId = ENGINE
+    resume_re: re.Pattern[str] = _RESUME_RE
+    stderr_tail_lines = STDERR_TAIL_LINES
+    logger = logger
+
+    def __init__(
+        self,
+        *,
+        pi_cmd: str,
+        extra_args: list[str],
+        model: str | None,
+        provider: str | None,
+        session_title: str,
+        session_dir: Path | None,
+    ) -> None:
+        self.pi_cmd = pi_cmd
+        self.extra_args = extra_args
+        self.model = model
+        self.provider = provider
+        self.session_title = session_title
+        self.session_dir = session_dir
+
+    def format_resume(self, token: ResumeToken) -> str:
+        if token.engine != ENGINE:
+            raise RuntimeError(f"resume token is for engine {token.engine!r}")
+        return f"`pi --session {self._quote_token(token.value)}`"
+
+    def extract_resume(self, text: str | None) -> ResumeToken | None:
+        if not text:
+            return None
+        found: str | None = None
+        for match in self.resume_re.finditer(text):
+            token = match.group("token")
+            if not token:
+                continue
+            token = token.strip()
+            if len(token) >= 2 and token[0] == token[-1] and token[0] in {'"', "'"}:
+                token = token[1:-1]
+            found = token
+        if not found:
+            return None
+        return ResumeToken(engine=self.engine, value=found)
+
+    def command(self) -> str:
+        return self.pi_cmd
+
+    def build_args(
+        self,
+        prompt: str,
+        resume: ResumeToken | None,
+        *,
+        state: PiStreamState,
+    ) -> list[str]:
+        _ = resume
+        args: list[str] = [*self.extra_args, "--print", "--mode", "json"]
+        if self.provider:
+            args.extend(["--provider", self.provider])
+        if self.model:
+            args.extend(["--model", self.model])
+        args.extend(["--session", state.resume.value])
+        args.append(self._sanitize_prompt(prompt))
+        return args
+
+    def stdin_payload(
+        self,
+        prompt: str,
+        resume: ResumeToken | None,
+        *,
+        state: PiStreamState,
+    ) -> bytes | None:
+        _ = prompt, resume, state
+        return None
+
+    def env(self, *, state: PiStreamState) -> dict[str, str] | None:
+        _ = state
+        env = dict(os.environ)
+        env.setdefault("NO_COLOR", "1")
+        env.setdefault("CI", "1")
+        return env
+
+    def new_state(self, prompt: str, resume: ResumeToken | None) -> PiStreamState:
+        _ = prompt
+        if resume is None:
+            session_path = self._new_session_path()
+            token = ResumeToken(engine=ENGINE, value=session_path)
+        else:
+            token = resume
+        return PiStreamState(resume=token)
+
+    def translate(
+        self,
+        data: dict[str, Any],
+        *,
+        state: PiStreamState,
+        resume: ResumeToken | None,
+        found_session: ResumeToken | None,
+    ) -> list[TakopiEvent]:
+        _ = resume, found_session
+        meta: dict[str, Any] = {"cwd": os.getcwd()}
+        if self.model:
+            meta["model"] = self.model
+        if self.provider:
+            meta["provider"] = self.provider
+        return translate_pi_event(
+            data,
+            title=self.session_title,
+            meta=meta or None,
+            state=state,
+        )
+
+    def process_error_events(
+        self,
+        rc: int,
+        *,
+        resume: ResumeToken | None,
+        found_session: ResumeToken | None,
+        stderr_tail: str,
+        state: PiStreamState,
+    ) -> list[TakopiEvent]:
+        message = f"pi failed (rc={rc})."
+        resume_for_completed = found_session or resume or state.resume
+        return [
+            self.note_event(message, state=state, detail={"stderr_tail": stderr_tail}),
+            CompletedEvent(
+                engine=ENGINE,
+                ok=False,
+                answer=state.last_assistant_text or "",
+                resume=resume_for_completed,
+                error=message,
+                usage=state.last_usage,
+            ),
+        ]
+
+    def stream_end_events(
+        self,
+        *,
+        resume: ResumeToken | None,
+        found_session: ResumeToken | None,
+        stderr_tail: str,
+        state: PiStreamState,
+    ) -> list[TakopiEvent]:
+        _ = stderr_tail
+        resume_for_completed = found_session or resume or state.resume
+        message = "pi finished without an agent_end event"
+        return [
+            CompletedEvent(
+                engine=ENGINE,
+                ok=False,
+                answer=state.last_assistant_text or "",
+                resume=resume_for_completed,
+                error=message,
+                usage=state.last_usage,
+            )
+        ]
+
+    def _new_session_path(self) -> str:
+        session_dir = self.session_dir or _default_session_dir(Path.cwd())
+        session_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(timezone.utc).isoformat()
+        safe_timestamp = timestamp.replace(":", "-").replace(".", "-")
+        token = uuid4().hex
+        filename = f"{safe_timestamp}_{token}.jsonl"
+        return str(session_dir / filename)
+
+    def _sanitize_prompt(self, prompt: str) -> str:
+        if prompt.startswith("-"):
+            return f" {prompt}"
+        return prompt
+
+    def _quote_token(self, token: str) -> str:
+        if not token:
+            return token
+        needs_quotes = any(ch.isspace() for ch in token)
+        if not needs_quotes and '"' not in token:
+            return token
+        escaped = token.replace('"', '\\"')
+        return f'"{escaped}"'
+
+
+def _default_session_dir(cwd: Path) -> Path:
+    agent_dir = os.environ.get("PI_CODING_AGENT_DIR")
+    base = Path(agent_dir).expanduser() if agent_dir else Path.home() / ".pi" / "agent"
+    safe_path = f"--{str(cwd).lstrip('/\\\\').replace('/', '-').replace('\\\\', '-').replace(':', '-')}--"
+    return base / "sessions" / safe_path
+
+
+def build_runner(config: EngineConfig, config_path: Path) -> Runner:
+    cmd = config.get("cmd") or "pi"
+    if not isinstance(cmd, str):
+        raise ConfigError(f"Invalid `pi.cmd` in {config_path}; expected a string.")
+
+    extra_args_value = config.get("extra_args")
+    if extra_args_value is None:
+        extra_args = []
+    elif isinstance(extra_args_value, list) and all(
+        isinstance(x, str) for x in extra_args_value
+    ):
+        extra_args = list(extra_args_value)
+    else:
+        raise ConfigError(
+            f"Invalid `pi.extra_args` in {config_path}; expected a list of strings."
+        )
+
+    model = config.get("model")
+    if model is not None and not isinstance(model, str):
+        raise ConfigError(f"Invalid `pi.model` in {config_path}; expected a string.")
+
+    provider = config.get("provider")
+    if provider is not None and not isinstance(provider, str):
+        raise ConfigError(f"Invalid `pi.provider` in {config_path}; expected a string.")
+
+    session_dir_value = config.get("session_dir")
+    session_dir: Path | None = None
+    if session_dir_value is not None:
+        if not isinstance(session_dir_value, str):
+            raise ConfigError(
+                f"Invalid `pi.session_dir` in {config_path}; expected a string."
+            )
+        session_dir = Path(session_dir_value).expanduser()
+
+    title = str(config.get("session_title") or (model if model else "pi"))
+
+    return PiRunner(
+        pi_cmd=cmd,
+        extra_args=extra_args,
+        model=model,
+        provider=provider,
+        session_title=title,
+        session_dir=session_dir,
+    )
+
+
+BACKEND = EngineBackend(
+    id="pi",
+    build_runner=build_runner,
+    cli_cmd="pi",
+    install_cmd="npm install -g @mariozechner/pi-coding-agent",
+)

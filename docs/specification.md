@@ -23,7 +23,7 @@ Out of scope for v0.4.0:
 
 ## 2. Terminology
 
-- **EngineId**: string identifier of an engine (e.g., `"codex"`).
+- **EngineId**: string identifier of an engine (e.g., `"codex"`, `"claude"`, `"pi"`).
 - **Runner**: Takopi adapter that executes an engine process and yields **Takopi events**.
 - **Thread**: a single engine-side conversation, identified in Takopi by a **ResumeToken**.
 - **ResumeToken**: Takopi-owned thread identifier `{ engine: EngineId, value: str }`.
@@ -41,6 +41,7 @@ The canonical ResumeLine embedded in chat MUST be the engine’s CLI resume comm
 
 - `codex resume <id>`
 - `claude --resume <id>`
+- `pi --session <path>`
 
 Takopi MUST treat the runner as authoritative for:
 
@@ -347,7 +348,7 @@ Decision (v0.4.0):
 * If an engine subcommand is provided, Takopi MUST still use the auto-router, but it overrides the configured default engine for new threads.
 * Resume extraction MUST poll **all** available runners (per §3.4) and route to the first matching runner.
 * New thread engine override (chat-level):
-  * Users MAY prefix the first non-empty line with `/{engine}` (e.g. `/claude` or `/codex`) to select the engine for a **new** thread.
+* Users MAY prefix the first non-empty line with `/{engine}` (e.g. `/claude`, `/codex`, or `/pi`) to select the engine for a **new** thread.
   * The bridge MUST strip that directive from the prompt before invoking the runner.
   * If a ResumeToken is resolved from the message or reply, it MUST take precedence and the `/{engine}` directive MUST be ignored.
 

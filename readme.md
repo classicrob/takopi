@@ -2,7 +2,7 @@
 
 🐙 *he just wants to help-pi*
 
-telegram bridge for codex, claude code, and [other agents](docs/adding-a-runner.md). runs the agent cli, streams progress, and supports resumable sessions.
+telegram bridge for codex, claude code, pi, and [other agents](docs/adding-a-runner.md). runs the agent cli, streams progress, and supports resumable sessions.
 
 ## features
 
@@ -22,6 +22,7 @@ parallel runs across threads, per thread queue support.
 - at least one engine installed:
   - `codex` on PATH (`npm install -g @openai/codex` or `brew install codex`)
   - `claude` on PATH (`npm install -g @anthropic-ai/claude-code`)
+  - `pi` on PATH (`npm install -g @mariozechner/pi-coding-agent`)
 
 ## install
 
@@ -55,6 +56,10 @@ allowed_tools = ["Bash", "Read", "Write", "WebSearch"]
 dangerously_skip_permissions = false
 # uses subscription by default, override to use api billing
 use_api_billing = false
+
+[pi]
+model = "gpt-4.1"
+provider = "openai"
 ```
 
 ## usage
@@ -66,6 +71,7 @@ cd ~/dev/your-repo
 takopi
 # or override the default engine for new threads:
 takopi claude
+takopi pi
 ```
 
 resume lines always route to the matching engine; subcommands only override the default for new threads.
