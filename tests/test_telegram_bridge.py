@@ -1,5 +1,6 @@
+from dataclasses import replace
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import anyio
 import pytest
@@ -18,6 +19,8 @@ from takopi.telegram.bridge import (
     _send_with_resume,
     run_main_loop,
 )
+from takopi.telegram.client import BotClient
+from takopi.telegram.topic_state import TopicStateStore, resolve_state_path
 from takopi.context import RunContext
 from takopi.config import ProjectConfig, ProjectsConfig, empty_projects_config
 from takopi.runner_bridge import ExecBridgeConfig, RunningTask
@@ -92,12 +95,13 @@ class _FakeTransport:
         return None
 
 
-class _FakeBot:
+class _FakeBot(BotClient):
     def __init__(self) -> None:
         self.command_calls: list[dict] = []
         self.callback_calls: list[dict] = []
         self.send_calls: list[dict] = []
         self.edit_calls: list[dict] = []
+        self.edit_topic_calls: list[dict[str, Any]] = []
         self.delete_calls: list[dict] = []
 
     async def get_updates(
@@ -105,13 +109,13 @@ class _FakeBot:
         offset: int | None,
         timeout_s: int = 50,
         allowed_updates: list[str] | None = None,
-    ) -> list[dict] | None:
+    ) -> list[dict[str, Any]] | None:
         _ = offset
         _ = timeout_s
         _ = allowed_updates
         return []
 
-    async def get_file(self, file_id: str) -> dict | None:
+    async def get_file(self, file_id: str) -> dict[str, Any] | None:
         _ = file_id
         return None
 
@@ -125,18 +129,20 @@ class _FakeBot:
         text: str,
         reply_to_message_id: int | None = None,
         disable_notification: bool | None = False,
-        entities: list[dict] | None = None,
+        message_thread_id: int | None = None,
+        entities: list[dict[str, Any]] | None = None,
         parse_mode: str | None = None,
         reply_markup: dict | None = None,
         *,
         replace_message_id: int | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         self.send_calls.append(
             {
                 "chat_id": chat_id,
                 "text": text,
                 "reply_to_message_id": reply_to_message_id,
                 "disable_notification": disable_notification,
+                "message_thread_id": message_thread_id,
                 "entities": entities,
                 "parse_mode": parse_mode,
                 "reply_markup": reply_markup,
@@ -150,12 +156,12 @@ class _FakeBot:
         chat_id: int,
         message_id: int,
         text: str,
-        entities: list[dict] | None = None,
+        entities: list[dict[str, Any]] | None = None,
         parse_mode: str | None = None,
         reply_markup: dict | None = None,
         *,
         wait: bool = True,
-    ) -> dict:
+    ) -> dict[str, Any]:
         self.edit_calls.append(
             {
                 "chat_id": chat_id,
@@ -175,9 +181,9 @@ class _FakeBot:
 
     async def set_my_commands(
         self,
-        commands: list[dict],
+        commands: list[dict[str, Any]],
         *,
-        scope: dict | None = None,
+        scope: dict[str, Any] | None = None,
         language_code: str | None = None,
     ) -> bool:
         self.command_calls.append(
@@ -189,8 +195,38 @@ class _FakeBot:
         )
         return True
 
-    async def get_me(self) -> dict | None:
+    async def get_me(self) -> dict[str, Any] | None:
         return {"id": 1}
+
+    async def get_chat(self, chat_id: int) -> dict[str, Any] | None:
+        _ = chat_id
+        return {"id": chat_id, "type": "supergroup", "is_forum": True}
+
+    async def get_chat_member(
+        self, chat_id: int, user_id: int
+    ) -> dict[str, Any] | None:
+        _ = chat_id
+        _ = user_id
+        return {"status": "administrator", "can_manage_topics": True}
+
+    async def create_forum_topic(
+        self, chat_id: int, name: str
+    ) -> dict[str, Any] | None:
+        _ = chat_id
+        _ = name
+        return {"message_thread_id": 1}
+
+    async def edit_forum_topic(
+        self, chat_id: int, message_thread_id: int, name: str
+    ) -> bool:
+        self.edit_topic_calls.append(
+            {
+                "chat_id": chat_id,
+                "message_thread_id": message_thread_id,
+                "name": name,
+            }
+        )
+        return True
 
     async def close(self) -> None:
         return None
@@ -457,19 +493,19 @@ async def test_telegram_transport_passes_reply_markup() -> None:
 
 @pytest.mark.anyio
 async def test_telegram_transport_edit_wait_false_returns_ref() -> None:
-    class _OutboxBot:
+    class _OutboxBot(BotClient):
         def __init__(self) -> None:
-            self.edit_calls: list[dict[str, object]] = []
+            self.edit_calls: list[dict[str, Any]] = []
 
         async def get_updates(
             self,
             offset: int | None,
             timeout_s: int = 50,
             allowed_updates: list[str] | None = None,
-        ) -> list[dict] | None:
+        ) -> list[dict[str, Any]] | None:
             return None
 
-        async def get_file(self, file_id: str) -> dict | None:
+        async def get_file(self, file_id: str) -> dict[str, Any] | None:
             _ = file_id
             return None
 
@@ -483,7 +519,8 @@ async def test_telegram_transport_edit_wait_false_returns_ref() -> None:
             text: str,
             reply_to_message_id: int | None = None,
             disable_notification: bool | None = False,
-            entities: list[dict] | None = None,
+            message_thread_id: int | None = None,
+            entities: list[dict[str, Any]] | None = None,
             parse_mode: str | None = None,
             reply_markup: dict | None = None,
             *,
@@ -497,7 +534,7 @@ async def test_telegram_transport_edit_wait_false_returns_ref() -> None:
             chat_id: int,
             message_id: int,
             text: str,
-            entities: list[dict] | None = None,
+            entities: list[dict[str, Any]] | None = None,
             parse_mode: str | None = None,
             reply_markup: dict | None = None,
             *,
@@ -527,14 +564,14 @@ async def test_telegram_transport_edit_wait_false_returns_ref() -> None:
 
         async def set_my_commands(
             self,
-            commands: list[dict[str, object]],
+            commands: list[dict[str, Any]],
             *,
-            scope: dict[str, object] | None = None,
+            scope: dict[str, Any] | None = None,
             language_code: str | None = None,
         ) -> bool:
             return False
 
-        async def get_me(self) -> dict | None:
+        async def get_me(self) -> dict[str, Any] | None:
             return None
 
         async def close(self) -> None:
@@ -755,11 +792,115 @@ def test_resolve_message_accepts_backticked_ctx_line() -> None:
     assert resolved.context == RunContext(project="takopi", branch="feat/api")
 
 
+def test_topic_title_matches_command_syntax() -> None:
+    transport = _FakeTransport()
+    cfg = _make_cfg(transport)
+
+    title = bridge._topic_title(
+        cfg=cfg,
+        runtime=cfg.runtime,
+        context=RunContext(project="takopi", branch="master"),
+    )
+
+    assert title == "takopi @master"
+
+    title = bridge._topic_title(
+        cfg=cfg,
+        runtime=cfg.runtime,
+        context=RunContext(project="takopi", branch=None),
+    )
+
+    assert title == "takopi"
+
+    title = bridge._topic_title(
+        cfg=cfg,
+        runtime=cfg.runtime,
+        context=RunContext(project=None, branch="main"),
+    )
+
+    assert title == "@main"
+
+
+def test_topic_title_per_project_chat_includes_project() -> None:
+    transport = _FakeTransport()
+    cfg = replace(
+        _make_cfg(transport),
+        topics=bridge.TelegramTopicsConfig(
+            enabled=True,
+            mode="per_project_chat",
+        ),
+    )
+
+    title = bridge._topic_title(
+        cfg=cfg,
+        runtime=cfg.runtime,
+        context=RunContext(project="takopi", branch="master"),
+    )
+
+    assert title == "takopi @master"
+
+
+@pytest.mark.anyio
+async def test_maybe_rename_topic_updates_title(tmp_path: Path) -> None:
+    transport = _FakeTransport()
+    cfg = _make_cfg(transport)
+    store = TopicStateStore(tmp_path / "telegram_topics_state.json")
+
+    await store.set_context(
+        123,
+        77,
+        RunContext(project="takopi", branch="old"),
+        topic_title="takopi @old",
+    )
+
+    await bridge._maybe_rename_topic(
+        cfg,
+        store,
+        chat_id=123,
+        thread_id=77,
+        context=RunContext(project="takopi", branch="new"),
+    )
+
+    bot = cast(_FakeBot, cfg.bot)
+    assert bot.edit_topic_calls
+    assert bot.edit_topic_calls[-1]["name"] == "takopi @new"
+    snapshot = await store.get_thread(123, 77)
+    assert snapshot is not None
+    assert snapshot.topic_title == "takopi @new"
+
+
+@pytest.mark.anyio
+async def test_maybe_rename_topic_skips_when_title_matches(tmp_path: Path) -> None:
+    transport = _FakeTransport()
+    cfg = _make_cfg(transport)
+    store = TopicStateStore(tmp_path / "telegram_topics_state.json")
+
+    await store.set_context(
+        123,
+        77,
+        RunContext(project="takopi", branch="main"),
+        topic_title="takopi @main",
+    )
+    snapshot = await store.get_thread(123, 77)
+
+    await bridge._maybe_rename_topic(
+        cfg,
+        store,
+        chat_id=123,
+        thread_id=77,
+        context=RunContext(project="takopi", branch="main"),
+        snapshot=snapshot,
+    )
+
+    bot = cast(_FakeBot, cfg.bot)
+    assert bot.edit_topic_calls == []
+
+
 @pytest.mark.anyio
 async def test_send_with_resume_waits_for_token() -> None:
     transport = _FakeTransport()
     cfg = _make_cfg(transport)
-    sent: list[tuple[int, int, str, ResumeToken, RunContext | None]] = []
+    sent: list[tuple[int, int, str, ResumeToken, RunContext | None, int | None]] = []
 
     async def enqueue(
         chat_id: int,
@@ -767,8 +908,9 @@ async def test_send_with_resume_waits_for_token() -> None:
         text: str,
         resume: ResumeToken,
         context: RunContext | None,
+        thread_id: int | None,
     ) -> None:
-        sent.append((chat_id, user_msg_id, text, resume, context))
+        sent.append((chat_id, user_msg_id, text, resume, context, thread_id))
 
     running_task = RunningTask()
 
@@ -785,11 +927,19 @@ async def test_send_with_resume_waits_for_token() -> None:
             running_task,
             123,
             10,
+            None,
             "hello",
         )
 
     assert sent == [
-        (123, 10, "hello", ResumeToken(engine=CODEX_ENGINE, value="abc123"), None)
+        (
+            123,
+            10,
+            "hello",
+            ResumeToken(engine=CODEX_ENGINE, value="abc123"),
+            None,
+            None,
+        )
     ]
     assert transport.send_calls == []
 
@@ -798,7 +948,7 @@ async def test_send_with_resume_waits_for_token() -> None:
 async def test_send_with_resume_reports_when_missing() -> None:
     transport = _FakeTransport()
     cfg = _make_cfg(transport)
-    sent: list[tuple[int, int, str, ResumeToken, RunContext | None]] = []
+    sent: list[tuple[int, int, str, ResumeToken, RunContext | None, int | None]] = []
 
     async def enqueue(
         chat_id: int,
@@ -806,8 +956,9 @@ async def test_send_with_resume_reports_when_missing() -> None:
         text: str,
         resume: ResumeToken,
         context: RunContext | None,
+        thread_id: int | None,
     ) -> None:
-        sent.append((chat_id, user_msg_id, text, resume, context))
+        sent.append((chat_id, user_msg_id, text, resume, context, thread_id))
 
     running_task = RunningTask()
     running_task.done.set()
@@ -818,6 +969,7 @@ async def test_send_with_resume_reports_when_missing() -> None:
         running_task,
         123,
         10,
+        None,
         "hello",
     )
 
@@ -901,6 +1053,75 @@ async def test_run_main_loop_routes_reply_to_running_resume() -> None:
             hold.set()
             stop_polling.set()
             tg.cancel_scope.cancel()
+
+
+@pytest.mark.anyio
+async def test_run_main_loop_persists_topic_sessions_in_per_project_chat(
+    tmp_path: Path,
+) -> None:
+    project_chat_id = -100
+    resume_value = "resume-123"
+
+    transport = _FakeTransport()
+    bot = _FakeBot()
+    runner = ScriptRunner(
+        [Return(answer="ok")],
+        engine=CODEX_ENGINE,
+        resume_value=resume_value,
+    )
+    exec_cfg = ExecBridgeConfig(
+        transport=transport,
+        presenter=MarkdownPresenter(),
+        final_notify=True,
+    )
+    projects = ProjectsConfig(
+        projects={
+            "takopi": ProjectConfig(
+                alias="takopi",
+                path=Path("."),
+                worktrees_dir=Path(".worktrees"),
+                chat_id=project_chat_id,
+            )
+        },
+        default_project=None,
+        chat_map={project_chat_id: "takopi"},
+    )
+    runtime = TransportRuntime(
+        router=_make_router(runner),
+        projects=projects,
+        config_path=tmp_path / "takopi.toml",
+    )
+    cfg = TelegramBridgeConfig(
+        bot=bot,
+        runtime=runtime,
+        chat_id=123,
+        startup_msg="",
+        exec_cfg=exec_cfg,
+        topics=bridge.TelegramTopicsConfig(
+            enabled=True,
+            mode="per_project_chat",
+        ),
+    )
+
+    async def poller(_cfg: TelegramBridgeConfig):
+        yield TelegramIncomingMessage(
+            transport="telegram",
+            chat_id=project_chat_id,
+            message_id=1,
+            text="hello",
+            reply_to_message_id=None,
+            reply_to_text=None,
+            sender_id=123,
+            thread_id=77,
+        )
+
+    with anyio.fail_after(2):
+        await run_main_loop(cfg, poller)
+
+    state_path = resolve_state_path(runtime.config_path or tmp_path / "takopi.toml")
+    store = TopicStateStore(state_path)
+    stored = await store.get_session_resume(project_chat_id, 77, CODEX_ENGINE)
+    assert stored == ResumeToken(engine=CODEX_ENGINE, value=resume_value)
 
 
 @pytest.mark.anyio

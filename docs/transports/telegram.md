@@ -34,6 +34,41 @@ Set `OPENAI_API_KEY` in the environment. If transcription is enabled but the API
 is missing or the audio download fails, takopi replies with a short error and skips
 the run.
 
+## Forum topics (optional)
+
+Takopi can bind Telegram forum topics to a project/branch and persist resume tokens
+per topic, so replies keep the right context even after restarts.
+
+Configuration (under `[transports.telegram]`):
+
+```toml
+[transports.telegram.topics]
+enabled = true
+mode = "multi_project_chat" # or "per_project_chat"
+```
+
+Requirements:
+
+- `multi_project_chat`: `chat_id` must be a forum-enabled supergroup (topics enabled).
+- `per_project_chat`: each `projects.<alias>.chat_id` must point to a forum-enabled
+  supergroup for that project.
+- The bot needs the **Manage Topics** permission in the relevant chat(s).
+
+Commands:
+
+- `multi_project_chat`: `/topic <project> @branch` creates a topic in the main chat
+  and binds it.
+- `per_project_chat`: `/topic @branch` creates a topic in the project chat and binds it.
+- `/ctx` inside a topic shows the bound context and stored session engines.
+  `/ctx set ...` and `/ctx clear` update the binding.
+- `/new` inside a topic clears stored resume tokens for that topic.
+
+State is stored in `telegram_topics_state.json` alongside the config file.
+Delete it to reset all topic bindings and stored sessions.
+
+Note: `multi_project_chat` does not assume a default project; topics must be bound
+before running without directives.
+
 ## Outbox model
 
 - Single worker processes one op at a time.

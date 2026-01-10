@@ -1,14 +1,17 @@
+from typing import Any
+
 import anyio
 import pytest
 
-from takopi.telegram.client import TelegramClient, TelegramRetryAfter
+from takopi.telegram.client import BotClient, TelegramClient, TelegramRetryAfter
 
 
-class _FakeBot:
+class _FakeBot(BotClient):
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.edit_calls: list[str] = []
         self.delete_calls: list[tuple[int, int]] = []
+        self.topic_calls: list[tuple[int, int, str]] = []
         self._edit_attempts = 0
         self._updates_attempts = 0
         self.retry_after: float | None = None
@@ -20,14 +23,16 @@ class _FakeBot:
         text: str,
         reply_to_message_id: int | None = None,
         disable_notification: bool | None = False,
-        entities: list[dict] | None = None,
+        message_thread_id: int | None = None,
+        entities: list[dict[str, Any]] | None = None,
         parse_mode: str | None = None,
         reply_markup: dict | None = None,
         *,
         replace_message_id: int | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         _ = reply_to_message_id
         _ = disable_notification
+        _ = message_thread_id
         _ = entities
         _ = parse_mode
         _ = reply_markup
@@ -40,12 +45,12 @@ class _FakeBot:
         chat_id: int,
         message_id: int,
         text: str,
-        entities: list[dict] | None = None,
+        entities: list[dict[str, Any]] | None = None,
         parse_mode: str | None = None,
         reply_markup: dict | None = None,
         *,
         wait: bool = True,
-    ) -> dict:
+    ) -> dict[str, Any]:
         _ = chat_id
         _ = message_id
         _ = entities
@@ -71,9 +76,9 @@ class _FakeBot:
 
     async def set_my_commands(
         self,
-        commands: list[dict],
+        commands: list[dict[str, Any]],
         *,
-        scope: dict | None = None,
+        scope: dict[str, Any] | None = None,
         language_code: str | None = None,
     ) -> bool:
         _ = commands
@@ -86,7 +91,7 @@ class _FakeBot:
         offset: int | None,
         timeout_s: int = 50,
         allowed_updates: list[str] | None = None,
-    ) -> list[dict] | None:
+    ) -> list[dict[str, Any]] | None:
         _ = offset
         _ = timeout_s
         _ = allowed_updates
@@ -96,7 +101,7 @@ class _FakeBot:
         self._updates_attempts += 1
         return []
 
-    async def get_file(self, file_id: str) -> dict | None:
+    async def get_file(self, file_id: str) -> dict[str, Any] | None:
         _ = file_id
         return None
 
@@ -107,7 +112,7 @@ class _FakeBot:
     async def close(self) -> None:
         return None
 
-    async def get_me(self) -> dict | None:
+    async def get_me(self) -> dict[str, Any] | None:
         return {"id": 1}
 
     async def answer_callback_query(
@@ -118,6 +123,27 @@ class _FakeBot:
     ) -> bool:
         _ = callback_query_id, text, show_alert
         return True
+
+    async def edit_forum_topic(
+        self, chat_id: int, message_thread_id: int, name: str
+    ) -> bool:
+        self.calls.append("edit_forum_topic")
+        self.topic_calls.append((chat_id, message_thread_id, name))
+        return True
+
+
+@pytest.mark.anyio
+async def test_edit_forum_topic_uses_outbox() -> None:
+    bot = _FakeBot()
+    client = TelegramClient(client=bot, private_chat_rps=0.0, group_chat_rps=0.0)
+
+    result = await client.edit_forum_topic(
+        chat_id=7, message_thread_id=42, name="takopi @main"
+    )
+
+    assert result is True
+    assert bot.calls == ["edit_forum_topic"]
+    assert bot.topic_calls == [(7, 42, "takopi @main")]
 
 
 @pytest.mark.anyio

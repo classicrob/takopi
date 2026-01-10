@@ -16,8 +16,34 @@ from pydantic import (
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_settings.sources import TomlConfigSettingsSource
 
-from .config import ConfigError, ProjectConfig, ProjectsConfig, HOME_CONFIG_PATH
+from .config import (
+    ConfigError,
+    HOME_CONFIG_PATH,
+    ProjectConfig,
+    ProjectsConfig,
+    _normalize_engine_id,
+    _normalize_project_path,
+)
 from .config_migrations import migrate_config_file
+
+
+class TelegramTopicsSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    mode: str = "multi_project_chat"
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _validate_mode(cls, value: Any) -> str:
+        if not isinstance(value, str):
+            raise ValueError("topics.mode must be a string")
+        cleaned = value.strip()
+        if cleaned not in {"per_project_chat", "multi_project_chat"}:
+            raise ValueError(
+                "topics.mode must be 'per_project_chat' or 'multi_project_chat'"
+            )
+        return cleaned
 
 
 class TelegramTransportSettings(BaseModel):
@@ -26,6 +52,7 @@ class TelegramTransportSettings(BaseModel):
     bot_token: SecretStr | None = None
     chat_id: int | None = None
     voice_transcription: bool = False
+    topics: TelegramTopicsSettings = Field(default_factory=TelegramTopicsSettings)
 
     @field_validator("bot_token", mode="before")
     @classmethod
@@ -241,7 +268,7 @@ class TakopiSettings(BaseSettings):
                 raise ConfigError(
                     f"Invalid `worktrees_dir` for project {alias!r} in {config_path}."
                 )
-            worktrees_dir = Path(worktrees_dir_raw.strip())
+            worktrees_dir = Path(worktrees_dir_raw.strip()).expanduser()
 
             default_engine_raw = entry.default_engine
             default_engine = None
@@ -401,30 +428,3 @@ def _load_settings_from_path(cfg_path: Path) -> TakopiSettings:
         raise ConfigError(f"Invalid config in {cfg_path}: {exc}") from exc
     except Exception as exc:  # pragma: no cover - safety net
         raise ConfigError(f"Failed to load config {cfg_path}: {exc}") from exc
-
-
-def _normalize_engine_id(
-    value: str,
-    *,
-    engine_ids: Iterable[str],
-    config_path: Path,
-    label: str,
-) -> str:
-    engine_map = {engine.lower(): engine for engine in engine_ids}
-    cleaned = value.strip()
-    if not cleaned:
-        raise ConfigError(f"Invalid `{label}` in {config_path}; expected a string.")
-    engine = engine_map.get(cleaned.lower())
-    if engine is None:
-        available = ", ".join(sorted(engine_map.values()))
-        raise ConfigError(
-            f"Unknown `{label}` {cleaned!r} in {config_path}. Available: {available}."
-        )
-    return engine
-
-
-def _normalize_project_path(value: str, *, config_path: Path) -> Path:
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        path = config_path.parent / path
-    return path
