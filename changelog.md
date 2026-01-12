@@ -1,5 +1,21 @@
 # changelog
 
+## v0.17.0 (2026-01-12)
+
+### changes
+
+- add chat session mode (`session_mode = "chat"`) for auto-resume per chat without replying, reset with `/new` [#102](https://github.com/banteg/takopi/pull/102)
+- add `message_overflow = "split"` to send long responses as multiple messages instead of trimming [#101](https://github.com/banteg/takopi/pull/101)
+- add `show_resume_line` option to hide resume lines when auto-resume is available [#100](https://github.com/banteg/takopi/pull/100)
+- add `auto_put_mode = "prompt"` to start a run with the caption after uploading a file [#97](https://github.com/banteg/takopi/pull/97)
+- expose `thread_id` to plugins via run context [#99](https://github.com/banteg/takopi/pull/99)
+- use tomli-w for config serialization [#103](https://github.com/banteg/takopi/pull/103)
+- add `voice_transcription_model` setting for local whisper servers [#98](https://github.com/banteg/takopi/pull/98)
+
+### docs
+
+- document chat sessions, message overflow, and voice transcription model settings
+
 ## v0.16.0 (2026-01-12)
 
 ### fixes
@@ -10,13 +26,11 @@
 
 - simplify runtime, config, and telegram internals [#85](https://github.com/banteg/takopi/pull/85)
 - refactor telegram boundary types [#90](https://github.com/banteg/takopi/pull/90)
-- allow configuring the telegram voice transcription model for local whisper servers
 
 ### docs
 
 - add tips section to user guide
 - rework readme
-- document OPENAI_BASE_URL and model overrides for telegram voice transcription
 
 ## v0.15.0 (2026-01-11)
 
