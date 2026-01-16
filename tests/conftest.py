@@ -1,18 +1,27 @@
-import sys
-from pathlib import Path
+from collections.abc import Callable
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from takopi.telegram.bridge import TelegramBridgeConfig
+from takopi.runners.mock import ScriptRunner
+from tests.telegram_fakes import FakeBot, FakeTransport, make_cfg as build_cfg
 
 
 @pytest.fixture
-def anyio_backend() -> str:
-    return "asyncio"
+def fake_transport() -> FakeTransport:
+    return FakeTransport()
 
 
-@pytest.fixture(autouse=True)
-def reset_plugins_state() -> None:
-    import takopi.plugins as plugins
+@pytest.fixture
+def fake_bot() -> FakeBot:
+    return FakeBot()
 
-    plugins.reset_plugin_state()
+
+@pytest.fixture
+def make_cfg() -> Callable[..., TelegramBridgeConfig]:
+    def _factory(
+        transport: FakeTransport, runner: ScriptRunner | None = None
+    ) -> TelegramBridgeConfig:
+        return build_cfg(transport, runner)
+
+    return _factory

@@ -1,7 +1,16 @@
+from collections.abc import Iterator
+
 import pytest
 
 from takopi import plugins
 from tests.plugin_fixtures import FakeEntryPoint, install_entrypoints
+
+
+@pytest.fixture(autouse=True)
+def _reset_plugin_state() -> Iterator[None]:
+    plugins.reset_plugin_state()
+    yield
+    plugins.reset_plugin_state()
 
 
 def test_list_ids_does_not_load_entrypoints(monkeypatch) -> None:
