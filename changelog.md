@@ -1,5 +1,19 @@
 # changelog
 
+## v0.22.0 (2026-01-28)
+
+### features
+
+- add liaison runner for natural language interpretation via tmux orchestration
+- add `input_request` and `input_response` event types for user escalation
+- add escalation policy with configurable patterns for auto-approve/escalate
+- add multi-liaison coordination via shared files (swarm pattern)
+
+### docs
+
+- add liaison protocol to specification (section 11)
+- add liaison runner documentation
+
 ## v0.21.4 (2026-01-22)
 
 ### changes

@@ -60,7 +60,10 @@ This page is a high-level map of Takopi’s internal modules: what they do and h
 
 | Module | Responsibility |
 |--------|----------------|
-| `runners/*` | Engine runner implementations (Codex, Claude, OpenCode, Pi). |
+| `runners/*` | Engine runner implementations (Codex, Claude, OpenCode, Pi, Liaison). |
+| `runners/liaison.py` | Liaison runner: tmux-based orchestration of subagents via capture-pane/send-keys. |
+| `runners/escalation.py` | Escalation policy: determines when to ask user vs auto-respond. |
+| `runners/liaison_coordination.py` | Swarm coordination: file-based messaging between liaisons. |
 | `schemas/*` | msgspec schemas / decoders for engine JSONL streams. |
 
 ## Configuration and persistence

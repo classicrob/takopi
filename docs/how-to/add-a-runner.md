@@ -17,6 +17,9 @@ instead of internal modules.
 The walkthrough below uses an **imaginary engine** named **Acme** (`acme`) and intentionally mirrors
 the patterns used in `runners/claude.py`.
 
+!!! note "Non-JSONL runners"
+    Most runners use `JsonlSubprocessRunner` for JSONL-streaming CLIs. However, some engines require different patterns. The **liaison** runner, for example, uses tmux to orchestrate other agents via `capture-pane` and `send-keys` rather than JSONL streaming. If your engine doesn't emit JSONL, you can extend `BaseRunner` directly and implement `run_impl()` as an async generator. See `runners/liaison.py` for an example.
+
 ---
 
 ## What “done” looks like

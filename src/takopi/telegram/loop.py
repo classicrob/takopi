@@ -14,7 +14,7 @@ from ..config_watch import ConfigReload, watch_config as watch_config_changes
 from ..commands import list_command_ids
 from ..directives import DirectiveError
 from ..logging import get_logger
-from ..model import EngineId, ResumeToken
+from ..model import EngineId, InputRequestEvent, ResumeToken
 from ..runners.run_options import EngineRunOptions
 from ..scheduler import ThreadJob, ThreadScheduler
 from ..progress import ProgressTracker
@@ -23,7 +23,16 @@ from ..transport import MessageRef, SendOptions
 from ..transport_runtime import ResolvedMessage
 from ..context import RunContext
 from ..ids import RESERVED_CHAT_COMMANDS
-from .bridge import CANCEL_CALLBACK_DATA, TelegramBridgeConfig, send_plain
+from .bridge import (
+    CANCEL_CALLBACK_DATA,
+    CARD_EXPAND_CALLBACK,
+    CARD_PAUSE_CALLBACK,
+    INPUT_ANSWER_PREFIX,
+    TelegramBridgeConfig,
+    handle_callback_input_response,
+    is_input_callback,
+    send_plain,
+)
 from .commands.cancel import handle_callback_cancel, handle_cancel
 from .commands.file_transfer import FILE_PUT_USAGE
 from .commands.handlers import (
@@ -392,6 +401,14 @@ class TelegramLoopState:
     forward_coalesce_s: float
     media_group_debounce_s: float
     transport_id: str | None
+    # Maps (chat_id, message_id) -> request_id for input request messages
+    input_request_messages: dict[tuple[int, int], str]
+    # Maps (chat_id, message_id) -> expanded state for session cards
+    card_expansion: dict[tuple[int, int], bool]
+    # Maps (chat_id, thread_id) -> list of pending input requests for batching
+    pending_input_batches: dict[tuple[int, int | None], list[InputRequestEvent]]
+    # Maps (chat_id, thread_id) -> debounce token for input batching
+    input_batch_tokens: dict[tuple[int, int | None], int]
 
 
 if TYPE_CHECKING:
@@ -783,6 +800,85 @@ class MediaGroupBuffer:
             return
 
 
+class InputBatchBuffer:
+    """Buffer for batching input requests from multiple agents.
+
+    When inline_inputs is enabled, input requests are batched together
+    using a debounce delay so multiple questions from different agents
+    can be shown together in the session card.
+    """
+
+    def __init__(
+        self,
+        *,
+        task_group: TaskGroup,
+        debounce_s: float,
+        sleep: Callable[[float], Awaitable[None]] = anyio.sleep,
+        cfg: TelegramBridgeConfig,
+        batches: dict[tuple[int, int | None], list[InputRequestEvent]],
+        tokens: dict[tuple[int, int | None], int],
+        on_batch_ready: Callable[
+            [int, int | None, list[InputRequestEvent]], Awaitable[None]
+        ],
+    ) -> None:
+        self._task_group = task_group
+        self._debounce_s = debounce_s
+        self._sleep = sleep
+        self._cfg = cfg
+        self._batches = batches
+        self._tokens = tokens
+        self._on_batch_ready = on_batch_ready
+
+    def add(
+        self,
+        chat_id: int,
+        thread_id: int | None,
+        event: InputRequestEvent,
+    ) -> None:
+        """Add an input request to the batch for the given chat/thread."""
+        key = (chat_id, thread_id)
+        if key not in self._batches:
+            self._batches[key] = []
+            self._tokens[key] = 0
+            self._task_group.start_soon(self._flush_batch, key)
+        self._batches[key].append(event)
+        self._tokens[key] += 1
+        logger.debug(
+            "input_batch.added",
+            chat_id=chat_id,
+            thread_id=thread_id,
+            request_id=event.request_id,
+            batch_size=len(self._batches[key]),
+        )
+
+    async def _flush_batch(self, key: tuple[int, int | None]) -> None:
+        """Flush the batch after debounce delay."""
+        while True:
+            if key not in self._batches:
+                return
+            token = self._tokens[key]
+            await self._sleep(self._debounce_s)
+            if key not in self._batches:
+                return
+            if self._tokens[key] != token:
+                # More requests came in, wait again
+                continue
+            events = list(self._batches[key])
+            del self._batches[key]
+            del self._tokens[key]
+            if not events:
+                return
+            chat_id, thread_id = key
+            logger.debug(
+                "input_batch.flushing",
+                chat_id=chat_id,
+                thread_id=thread_id,
+                batch_size=len(events),
+            )
+            await self._on_batch_ready(chat_id, thread_id, events)
+            return
+
+
 def _diff_keys(old: dict[str, object], new: dict[str, object]) -> list[str]:
     keys = set(old) | set(new)
     return sorted(key for key in keys if old.get(key) != new.get(key))
@@ -897,6 +993,75 @@ async def send_with_resume(
     )
 
 
+async def _handle_card_expand(
+    cfg: TelegramBridgeConfig,
+    update: TelegramCallbackQuery,
+    state: TelegramLoopState,
+) -> None:
+    """Handle session card expand/collapse toggle."""
+    chat_id = update.chat_id
+    message_id = update.message_id
+    card_key = (chat_id, message_id)
+
+    # Toggle expansion state
+    currently_expanded = state.card_expansion.get(card_key, False)
+    state.card_expansion[card_key] = not currently_expanded
+
+    # Answer the callback query
+    await cfg.bot.answer_callback_query(
+        update.callback_query_id,
+        text="Expanded" if not currently_expanded else "Collapsed",
+    )
+
+    logger.debug(
+        "card.expand.toggled",
+        chat_id=chat_id,
+        message_id=message_id,
+        expanded=not currently_expanded,
+    )
+
+
+async def _handle_card_pause(
+    cfg: TelegramBridgeConfig,
+    update: TelegramCallbackQuery,
+    running_tasks: RunningTasks,
+    scheduler: ThreadScheduler,
+) -> None:
+    """Handle session card pause button."""
+    from ..transport import MessageRef
+
+    chat_id = update.chat_id
+    message_id = update.message_id
+
+    # Find running task for this message
+    ref = MessageRef(channel_id=chat_id, message_id=message_id)
+    task = running_tasks.get(ref)
+
+    if task is None:
+        await cfg.bot.answer_callback_query(
+            update.callback_query_id,
+            text="No active task to pause",
+        )
+        return
+
+    # For now, pause behaves like cancel
+    # Future: could implement actual pause/resume
+    await cfg.bot.answer_callback_query(
+        update.callback_query_id,
+        text="Pausing task...",
+    )
+
+    # Cancel the task
+    if hasattr(task, "cancel_scope") and task.cancel_scope is not None:
+        task.cancel_scope.cancel()
+
+    logger.debug(
+        "card.pause.triggered",
+        chat_id=chat_id,
+        message_id=message_id,
+    )
+
+
 async def run_main_loop(
     cfg: TelegramBridgeConfig,
     poller: Callable[
@@ -931,6 +1096,10 @@ async def run_main_loop(
         forward_coalesce_s=max(0.0, float(cfg.forward_coalesce_s)),
         media_group_debounce_s=max(0.0, float(cfg.media_group_debounce_s)),
         transport_id=transport_id,
+        input_request_messages={},
+        card_expansion={},
+        pending_input_batches={},
+        input_batch_tokens={},
     )
 
     def refresh_topics_scope() -> None:
@@ -1086,6 +1255,50 @@ async def run_main_loop(
 
                 return _wrapped
 
+            def make_input_request_handler(
+                chat_id: int,
+                thread_id: int | None,
+                *,
+                use_batching: bool = False,
+            ) -> Callable[[InputRequestEvent], Awaitable[None]]:
+                """Create a callback that sends input requests to Telegram.
+
+                Args:
+                    chat_id: Target chat ID
+                    thread_id: Optional thread ID for topics
+                    use_batching: If True and input_batch_buffer exists, batch requests
+                """
+
+                async def handle_input_request(event: InputRequestEvent) -> None:
+                    # If batching is enabled and buffer exists, add to batch
+                    if use_batching and input_batch_buffer is not None:
+                        input_batch_buffer.add(chat_id, thread_id, event)
+                        return
+
+                    # Otherwise send immediately
+                    rendered = cfg.exec_cfg.presenter.render_input_request(event)
+                    sent = await cfg.exec_cfg.transport.send(
+                        channel_id=chat_id,
+                        message=rendered,
+                        options=SendOptions(
+                            reply_to=None,
+                            notify=event.urgency in ("high", "critical"),
+                            thread_id=thread_id,
+                        ),
+                    )
+                    if sent is not None:
+                        # Track the message_id -> request_id mapping
+                        msg_key = (chat_id, sent.message_id)
+                        state.input_request_messages[msg_key] = event.request_id
+                        logger.debug(
+                            "input_request.sent",
+                            chat_id=chat_id,
+                            message_id=sent.message_id,
+                            request_id=event.request_id,
+                        )
+
+                return handle_input_request
+
             async def run_job(
                 chat_id: int,
                 user_msg_id: int,
@@ -1099,6 +1312,8 @@ async def run_main_loop(
                 | None = None,
                 engine_override: EngineId | None = None,
                 progress_ref: MessageRef | None = None,
+                on_input_request: Callable[[InputRequestEvent], Awaitable[None]]
+                | None = None,
             ) -> None:
                 topic_key = (
                     (chat_id, thread_id)
@@ -1133,6 +1348,12 @@ async def run_main_loop(
                     chat_prefs=state.chat_prefs,
                     topic_store=state.topic_store,
                 )
+                # Use provided callback or create default for input requests
+                effective_input_handler = on_input_request
+                if effective_input_handler is None:
+                    effective_input_handler = make_input_request_handler(
+                        chat_id, thread_id, use_batching=cfg.unified.inline_inputs
+                    )
                 await run_engine(
                     exec_cfg=cfg.exec_cfg,
                     runtime=cfg.runtime,
@@ -1146,6 +1367,7 @@ async def run_main_loop(
                     on_thread_known=wrap_on_thread_known(
                         on_thread_known, topic_key, chat_session_key
                     ),
+                    on_input_request=effective_input_handler,
                     engine_override=engine_override,
                     thread_id=thread_id,
                     show_resume_line=show_resume_line,
@@ -1512,6 +1734,48 @@ async def run_main_loop(
                 resolve_prompt_message=resolve_prompt_message,
             )
 
+            async def _send_batched_input_requests(
+                chat_id: int,
+                thread_id: int | None,
+                events: list[InputRequestEvent],
+            ) -> None:
+                """Send batched input requests as separate messages."""
+                # For now, send each request as a separate message
+                # Future: render as part of session card
+                for event in events:
+                    rendered = cfg.exec_cfg.presenter.render_input_request(event)
+                    sent = await cfg.exec_cfg.transport.send(
+                        channel_id=chat_id,
+                        message=rendered,
+                        options=SendOptions(
+                            reply_to=None,
+                            notify=event.urgency in ("high", "critical"),
+                            thread_id=thread_id,
+                        ),
+                    )
+                    if sent is not None:
+                        msg_key = (chat_id, sent.message_id)
+                        state.input_request_messages[msg_key] = event.request_id
+                        logger.debug(
+                            "input_request.batched_sent",
+                            chat_id=chat_id,
+                            message_id=sent.message_id,
+                            request_id=event.request_id,
+                            batch_size=len(events),
+                        )
+
+            input_batch_buffer: InputBatchBuffer | None = None
+            if cfg.unified.inline_inputs:
+                input_batch_buffer = InputBatchBuffer(
+                    task_group=tg,
+                    debounce_s=cfg.unified.input_batch_delay_s,
+                    sleep=sleep,
+                    cfg=cfg,
+                    batches=state.pending_input_batches,
+                    tokens=state.input_batch_tokens,
+                    on_batch_ready=_send_batched_input_requests,
+                )
+
             async def build_message_context(
                 msg: TelegramIncomingMessage,
             ) -> TelegramMsgContext:
@@ -1802,12 +2066,58 @@ async def run_main_loop(
                             state.running_tasks,
                             scheduler,
                         )
+                    elif update.data is not None and is_input_callback(update.data):
+                        tg.start_soon(
+                            handle_callback_input_response,
+                            cfg,
+                            update,
+                            state.running_tasks,
+                        )
+                    elif update.data == CARD_EXPAND_CALLBACK:
+                        tg.start_soon(
+                            _handle_card_expand,
+                            cfg,
+                            update,
+                            state,
+                        )
+                    elif update.data == CARD_PAUSE_CALLBACK:
+                        tg.start_soon(
+                            _handle_card_pause,
+                            cfg,
+                            update,
+                            state.running_tasks,
+                            scheduler,
+                        )
                     else:
                         tg.start_soon(
                             cfg.bot.answer_callback_query,
                             update.callback_query_id,
                         )
                     return
+                # Check if this is a reply to an input request message
+                if isinstance(update, TelegramIncomingMessage):
+                    reply_id = update.reply_to_message_id
+                    if reply_id is not None:
+                        input_key = (update.chat_id, reply_id)
+                        request_id = state.input_request_messages.get(input_key)
+                        if request_id is not None:
+                            # This is a text reply to an input request
+                            mock_query = TelegramCallbackQuery(
+                                update_id=update.update_id,
+                                callback_query_id=str(update.message_id),
+                                chat_id=update.chat_id,
+                                message_id=reply_id,
+                                data=f"{INPUT_ANSWER_PREFIX}{request_id}",
+                                sender_id=update.sender_id,
+                            )
+                            tg.start_soon(
+                                handle_callback_input_response,
+                                cfg,
+                                mock_query,
+                                state.running_tasks,
+                                update.text,  # user_response
+                            )
+                            return
                 await route_message(update)
 
             async for update in poller_fn(cfg):

@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Takopi Session Flows - Direct vs Liaison</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a;
+      min-height: 100vh;
+      padding: 40px 20px;
+      color: #fff;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 32px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .subtitle {
+      color: #888;
+      font-size: 16px;
+      margin-bottom: 50px;
+      text-align: center;
+    }
+
+    /* Section styling */
+    .section {
+      margin-bottom: 60px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .section-number {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 18px;
+    }
+
+    .section-number.green {
+      background: rgba(74, 222, 128, 0.2);
+      color: #4ade80;
+    }
+
+    .section-number.purple {
+      background: rgba(155, 124, 247, 0.2);
+      color: #9b7cf7;
+    }
+
+    .section-title {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .section-title span {
+      color: #888;
+      font-weight: 400;
+      font-size: 16px;
+      margin-left: 12px;
+    }
+
+    /* Flow diagram */
+    .flow {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .flow-step {
+      flex: 1;
+      min-width: 280px;
+      max-width: 350px;
+    }
+
+    .flow-step-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .step-num {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #222;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: #888;
+    }
+
+    .step-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: #ccc;
+    }
+
+    .arrow {
+      display: flex;
+      align-items: center;
+      color: #444;
+      font-size: 24px;
+      padding-top: 60px;
+    }
+
+    /* Mini phone */
+    .mini-phone {
+      background: #17212b;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .mini-header {
+      background: #17212b;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 13px;
+    }
+
+    .mini-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #ff6b6b, #feca57);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+
+    .mini-chat {
+      padding: 12px;
+      background: #0e1621;
+      min-height: 200px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mini-msg {
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      line-height: 1.4;
+      max-width: 90%;
+    }
+
+    .mini-msg.user {
+      background: #2b5278;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+
+    .mini-msg.bot {
+      background: #182533;
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+
+    .mini-msg.status {
+      border-left: 2px solid #6ab3f7;
+      background: #182533;
+    }
+
+    .mini-msg.complete {
+      border-left: 2px solid #4ade80;
+      background: #182533;
+    }
+
+    .mini-msg.question {
+      border-left: 2px solid #fbbf24;
+      background: #182533;
+    }
+
+    .mini-time {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.3);
+      margin-top: 4px;
+    }
+
+    .mini-resume {
+      font-family: monospace;
+      font-size: 10px;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-top: 6px;
+      color: #888;
+    }
+
+    .mini-btn {
+      display: inline-block;
+      background: rgba(106, 179, 247, 0.15);
+      border: 1px solid rgba(106, 179, 247, 0.3);
+      color: #6ab3f7;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      margin: 4px 4px 0 0;
+    }
+
+    .mini-btn.secondary {
+      background: rgba(139, 155, 171, 0.1);
+      border-color: rgba(139, 155, 171, 0.3);
+      color: #8b9bab;
+    }
+
+    .reply-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #6ab3f7;
+      margin-bottom: 6px;
+      padding-left: 8px;
+      border-left: 2px solid #6ab3f7;
+    }
+
+    /* Pane activity in progress */
+    .pane-box {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 6px;
+      padding: 6px 8px;
+      margin-top: 6px;
+      border: 1px solid rgba(155, 124, 247, 0.2);
+    }
+
+    .pane-header {
+      font-size: 10px;
+      color: #9b7cf7;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .pane-output {
+      font-family: monospace;
+      font-size: 9px;
+      color: #888;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+
+    /* Terminal box */
+    .terminal {
+      background: #1a1a1a;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .terminal-header {
+      background: #2d2d2d;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .terminal-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .terminal-dot.red { background: #ff5f56; }
+    .terminal-dot.yellow { background: #ffbd2e; }
+    .terminal-dot.green { background: #27c93f; }
+
+    .terminal-title {
+      flex: 1;
+      text-align: center;
+      font-size: 12px;
+      color: #888;
+    }
+
+    .terminal-body {
+      padding: 12px;
+      font-family: 'SF Mono', Menlo, monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #ccc;
+      min-height: 180px;
+    }
+
+    .terminal-body .prompt {
+      color: #4ade80;
+    }
+
+    .terminal-body .cmd {
+      color: #fff;
+    }
+
+    .terminal-body .output {
+      color: #888;
+    }
+
+    .terminal-body .highlight {
+      color: #fbbf24;
+    }
+
+    /* Info box */
+    .info-box {
+      background: rgba(106, 179, 247, 0.1);
+      border: 1px solid rgba(106, 179, 247, 0.2);
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 20px;
+    }
+
+    .info-box h4 {
+      color: #6ab3f7;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .info-box p {
+      font-size: 13px;
+      color: #aaa;
+      line-height: 1.5;
+    }
+
+    .info-box code {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      color: #fff;
+    }
+
+    /* Comparison table */
+    .comparison-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 30px;
+    }
+
+    .comparison-table th,
+    .comparison-table td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid #222;
+      font-size: 13px;
+    }
+
+    .comparison-table th {
+      color: #888;
+      font-weight: 500;
+    }
+
+    .comparison-table td:first-child {
+      color: #6ab3f7;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Session Flows Comparison</h1>
+    <p class="subtitle">How resumption and visibility work in Direct vs Liaison mode</p>
+
+    <!-- DIRECT MODE -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-number green">1</div>
+        <h2 class="section-title">Direct Mode <span>/claude, /codex, etc.</span></h2>
+      </div>
+
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-step-header">
+            <div class="step-num">1</div>
+            <span class="step-label">Send command</span>
+          </div>
+          <div class="mini-phone">
+            <div class="mini-header">
+              <div class="mini-avatar">🐙</div>
+              <span>takopi</span>
+            </div>
+            <div class="mini-chat">
+              <div class="mini-msg user">
+                /claude add JWT auth to login
+              </div>
+              <div class="mini-msg bot status">
+                <div style="color: #6ab3f7; font-size: 11px;">working · claude · 12s</div>
+                <div style="color: #888; font-size: 10px; margin-top: 4px;">
+                  ✓ read src/auth/login.py<br>
+                  ⟳ edit src/auth/login.py
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arrow">→</div>
+
+        <div class="flow-step">
+          <div class="flow-step-header">
+            <div class="step-num">2</div>
+            <span class="step-label">Get result + resume token</span>
+          </div>
+          <div class="mini-phone">
+            <div class="mini-header">
+              <div class="mini-avatar">🐙</div>
+              <span>takopi</span>
+            </div>
+            <div class="mini-chat">
+              <div class="mini-msg user">
+                /claude add JWT auth to login
+              </div>
+              <div class="mini-msg bot complete">
+                <div style="color: #4ade80; font-size: 11px;">done · claude · 28s</div>
+                <div style="font-size: 11px; margin-top: 6px;">Added JWT auth with token generation...</div>
+                <div class="mini-resume">claude --resume 019bb89b</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arrow">→</div>
+
+        <div class="flow-step">
+          <div class="flow-step-header">
+            <div class="step-num">3</div>
+            <span class="step-label">Reply to continue session</span>
+          </div>
+          <div class="mini-phone">
+            <div class="mini-header">
+              <div class="mini-avatar">🐙</div>
+              <span>takopi</span>
+            </div>
+            <div class="mini-chat">
+              <div class="mini-msg bot complete" style="font-size: 10px;">
+                <div style="color: #4ade80;">done · claude · 28s</div>
+                <div class="mini-resume">claude --resume 019bb89b</div>
+              </div>
+              <div class="reply-indicator">
+                ↩ Replying to completion
+              </div>
+              <div class="mini-msg user">
+                also add refresh tokens
+              </div>
+              <div class="mini-msg bot complete">
+                <div style="color: #4ade80; font-size: 11px;">done · claude · 15s</div>
+                <div style="font-size: 11px; margin-top: 6px;">Added /auth/refresh endpoint...</div>
+                <div class="mini-resume">claude --resume 019bb89b</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box">
+        <h4>How session resume works</h4>
+        <p>
+          <strong>Stateless mode:</strong> Reply to any message containing a resume token. Takopi extracts the token and continues that session.<br><br>
+          <strong>Chat mode:</strong> Just send another message - Takopi auto-resumes the last session. Use <code>/new</code> to start fresh.
+        </p>
+      </div>
+    </div>
+
+    <!-- LIAISON MODE -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-number purple">2</div>
+        <h2 class="section-title">Liaison Mode <span>/liaison with subagent orchestration</span></h2>
+      </div>
+
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-step-header">
+            <div class="step-num">1</div>
+            <span class="step-label">Telegram: See progress + pane activity</span>
+          </div>
+          <div class="mini-phone">
+            <div class="mini-header">
+              <div class="mini-avatar">🐙</div>
+              <span>takopi</span>
+            </div>
+            <div class="mini-chat">
+              <div class="mini-msg user">
+                /liaison refactor auth to use JWT
+              </div>
+              <div class="mini-msg bot status">
+                <div style="color: #6ab3f7; font-size: 11px;">working · liaison · 45s</div>
+
+                <div class="pane-box">
+                  <div class="pane-header">● claude (liaison)</div>
+                  <div class="pane-output">Planning JWT implementation...
+Breaking into subtasks...</div>
+                </div>
+
+                <div class="pane-box">
+                  <div class="pane-header">● codex (worker)</div>
+                  <div class="pane-output">✓ Read src/auth/login.py
+Generating JWT utils...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arrow">→</div>
+
+        <div class="flow-step">
+          <div class="flow-step-header">
+            <div class="step-num">2</div>
+            <span class="step-label">Telegram: Input request (if escalated)</span>
+          </div>
+          <div class="mini-phone">
+            <div class="mini-header">
+              <div class="mini-avatar">🐙</div>
+              <span>takopi</span>
+            </div>
+            <div class="mini-chat">
+              <div class="mini-msg bot question">
+                <div style="color: #fbbf24; font-size: 11px;">[!] Question from subagent</div>
+                <div style="font-size: 12px; margin: 6px 0;">Delete existing session auth or keep as fallback?</div>
+                <div style="font-size: 10px; color: #888; font-style: italic;">(Context: codex pane)</div>
+                <div>
+                  <span class="mini-btn">Answer</span>
+                  <span class="mini-btn secondary">Let liaison handle</span>
+                </div>
+              </div>
+              <div class="mini-msg user">
+                Keep session auth as fallback
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arrow">→</div>
+
+        <div class="flow-step">
+          <div class="flow-step-header">
+            <div class="step-num">3</div>
+            <span class="step-label">Terminal: Watch tmux live (optional)</span>
+          </div>
+          <div class="terminal">
+            <div class="terminal-header">
+              <div class="terminal-dot red"></div>
+              <div class="terminal-dot yellow"></div>
+              <div class="terminal-dot green"></div>
+              <div class="terminal-title">tmux — takopi_liaison_abc123</div>
+            </div>
+            <div class="terminal-body">
+<span class="prompt">$</span> <span class="cmd">tmux attach -t takopi_liaison_abc123</span>
+
+<span class="output">┌─────────────────────────────┬─────────────────────────────┐
+│ <span class="highlight">claude (liaison)</span>            │ <span class="highlight">codex (worker)</span>              │
+│                             │                             │
+│ Planning JWT implementation │ ✓ Read src/auth/login.py   │
+│ Subtasks:                   │ ✓ Created jwt_utils.py      │
+│  1. Create JWT utils ✓      │                             │
+│  2. Update login handler    │ Waiting for instruction...  │
+│  3. Add refresh endpoint    │                             │
+│                             │                             │
+│ Delegating task 2 to codex  │                             │
+└─────────────────────────────┴─────────────────────────────┘</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box">
+        <h4>Watching liaison sessions</h4>
+        <p>
+          <strong>In Telegram:</strong> Progress messages show pane activity previews (last few lines from each subagent).<br><br>
+          <strong>In Terminal:</strong> For full visibility, attach to the tmux session: <code>tmux attach -t takopi_liaison_&lt;session_id&gt;</code><br><br>
+          <strong>Session ID:</strong> Found in the resume token at completion: <code>liaison --session abc123</code>
+        </p>
+      </div>
+    </div>
+
+    <!-- Summary Table -->
+    <div class="section">
+      <h2 class="section-title" style="margin-bottom: 16px;">Quick Reference</h2>
+      <table class="comparison-table">
+        <tr>
+          <th></th>
+          <th>Direct Mode</th>
+          <th>Liaison Mode</th>
+        </tr>
+        <tr>
+          <td>Command</td>
+          <td>/claude, /codex, /pi, /opencode</td>
+          <td>/liaison</td>
+        </tr>
+        <tr>
+          <td>What you see in Telegram</td>
+          <td>Tool calls (read, edit, bash)</td>
+          <td>Pane activity previews + escalation questions</td>
+        </tr>
+        <tr>
+          <td>Watch full output</td>
+          <td>N/A (streams to Telegram)</td>
+          <td><code>tmux attach -t takopi_liaison_xyz</code></td>
+        </tr>
+        <tr>
+          <td>Continue session</td>
+          <td>Reply to message with resume token</td>
+          <td>Same (resume token in completion)</td>
+        </tr>
+        <tr>
+          <td>Resume token format</td>
+          <td><code>claude --resume xyz</code></td>
+          <td><code>liaison --session xyz</code></td>
+        </tr>
+        <tr>
+          <td>User interaction</td>
+          <td>Wait for completion</td>
+          <td>May answer escalation questions</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

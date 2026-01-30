@@ -237,3 +237,37 @@ here; plugin engines should document their own keys.
     [opencode]
     model = "claude-sonnet"
     ```
+
+### `liaison`
+
+Liaison is a built-in orchestrator engine that uses tmux to control other agent CLIs as subagents.
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `coordination_folder` | string | `"~/.takopi/liaison"` | Base folder for session state and coordination files. |
+| `poll_interval_s` | float | `0.5` | Interval for polling tmux panes. |
+| `capture_lines` | int | `100` | Number of lines to capture from each pane. |
+| `escalation.timeout_s` | float | `300.0` | Timeout for user escalation responses. |
+| `escalation.always_escalate` | string[] | (defaults) | Patterns that always trigger user escalation (e.g., `delete`, `production`). |
+| `escalation.auto_approve` | string[] | (defaults) | Patterns that can be auto-approved (e.g., `mkdir`, `run.*test`). |
+
+=== "takopi config"
+
+    ```sh
+    takopi config set liaison.poll_interval_s 0.5
+    takopi config set liaison.capture_lines 100
+    takopi config set liaison.escalation.timeout_s 300.0
+    ```
+
+=== "toml"
+
+    ```toml
+    [liaison]
+    poll_interval_s = 0.5
+    capture_lines = 100
+
+    [liaison.escalation]
+    timeout_s = 300.0
+    always_escalate = ["delete", "production", "api[- ]?key"]
+    auto_approve = ["mkdir", "run.*test", "format"]
+    ```

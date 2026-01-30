@@ -2,13 +2,21 @@ from __future__ import annotations
 
 import time
 from collections.abc import Awaitable, Callable
+from typing import Any
 from dataclasses import dataclass, field
 
 import anyio
 
 from .context import RunContext
 from .logging import bind_run_context, get_logger
-from .model import CompletedEvent, ResumeToken, StartedEvent, TakopiEvent
+from .model import (
+    CompletedEvent,
+    InputRequestEvent,
+    InputResponseEvent,
+    ResumeToken,
+    StartedEvent,
+    TakopiEvent,
+)
 from .presenter import Presenter
 from .markdown import render_event_cli
 from .runner import Runner
@@ -87,6 +95,17 @@ class ExecBridgeConfig:
     final_notify: bool
 
 
+@dataclass(frozen=True, slots=True)
+class PendingInputRequest:
+    """Tracks a pending input request from a liaison."""
+
+    request_id: str
+    question: str
+    source: str
+    urgency: str
+    message_ref: MessageRef | None = None
+
+
 @dataclass(slots=True)
 class RunningTask:
     resume: ResumeToken | None = None
@@ -94,6 +113,12 @@ class RunningTask:
     cancel_requested: anyio.Event = field(default_factory=anyio.Event)
     done: anyio.Event = field(default_factory=anyio.Event)
     context: RunContext | None = None
+    # Track pending input requests from liaison agents
+    pending_inputs: dict[str, PendingInputRequest] = field(default_factory=dict)
+    # Callback to handle input responses
+    input_response_callback: Callable[[InputResponseEvent], Awaitable[None]] | None = (
+        None
+    )
 
 
 RunningTasks = dict[MessageRef, RunningTask]
@@ -289,6 +314,7 @@ class RunOutcome:
     cancelled: bool = False
     completed: CompletedEvent | None = None
     resume: ResumeToken | None = None
+    input_requests: list[InputRequestEvent] = field(default_factory=list)
 
 
 async def run_runner_with_cancel(
@@ -299,6 +325,7 @@ async def run_runner_with_cancel(
     edits: ProgressEdits,
     running_task: RunningTask | None,
     on_thread_known: Callable[[ResumeToken, anyio.Event], Awaitable[None]] | None,
+    on_input_request: Callable[[InputRequestEvent], Awaitable[None]] | None = None,
 ) -> RunOutcome:
     outcome = RunOutcome()
     async with anyio.create_task_group() as tg:
@@ -320,6 +347,29 @@ async def run_runner_with_cancel(
                     elif isinstance(evt, CompletedEvent):
                         outcome.resume = evt.resume or outcome.resume
                         outcome.completed = evt
+                    elif isinstance(evt, InputRequestEvent):
+                        # Track input request in outcome
+                        outcome.input_requests.append(evt)
+                        # Track in running task if available
+                        if running_task is not None:
+                            running_task.pending_inputs[evt.request_id] = (
+                                PendingInputRequest(
+                                    request_id=evt.request_id,
+                                    question=evt.question,
+                                    source=evt.source,
+                                    urgency=evt.urgency,
+                                )
+                            )
+                        # Notify callback if provided
+                        if on_input_request is not None:
+                            await on_input_request(evt)
+                        logger.info(
+                            "runner.input_request",
+                            request_id=evt.request_id,
+                            question=evt.question,
+                            source=evt.source,
+                            urgency=evt.urgency,
+                        )
                     await edits.on_event(evt)
             finally:
                 tg.cancel_scope.cancel()
@@ -395,6 +445,7 @@ async def handle_message(
     running_tasks: RunningTasks | None = None,
     on_thread_known: Callable[[ResumeToken, anyio.Event], Awaitable[None]]
     | None = None,
+    on_input_request: Callable[[InputRequestEvent], Awaitable[None]] | None = None,
     progress_ref: MessageRef | None = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> None:
@@ -473,6 +524,7 @@ async def handle_message(
                 edits=edits,
                 running_task=running_task,
                 on_thread_known=on_thread_known,
+                on_input_request=on_input_request,
             )
         except Exception as exc:
             error = exc

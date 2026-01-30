@@ -31,8 +31,14 @@ flowchart TB
 
     subgraph Runner["Runner Layer"]
         runner_proto[Runner Protocol<br/>runner.py]
-        runners[runners/<br/>claude, codex, opencode, pi]
+        runners[runners/<br/>claude, codex, opencode, pi, liaison]
         schemas[schemas/<br/>JSONL decoders]
+    end
+
+    subgraph Liaison["Liaison Layer"]
+        liaison_runner[liaison.py<br/>tmux orchestration]
+        escalation[escalation.py<br/>policy]
+        coordination[liaison_coordination.py<br/>swarm]
     end
 
     subgraph Transport["Transport Layer"]
@@ -134,9 +140,27 @@ classDiagram
         +usage: dict?
     }
 
+    class InputRequestEvent {
+        +type: "input_request"
+        +engine: EngineId
+        +request_id: str
+        +question: str
+        +source: subagent|liaison
+        +urgency: low|normal|high|critical
+    }
+
+    class InputResponseEvent {
+        +type: "input_response"
+        +engine: EngineId
+        +request_id: str
+        +response: str
+        +responder: user|liaison|timeout
+    }
+
     StartedEvent --> ResumeToken
     ActionEvent --> Action
     CompletedEvent --> ResumeToken
+    InputRequestEvent --> InputResponseEvent : answered by
 
     note for Action "ActionKind: command | tool | file_change |\nweb_search | subagent | note | turn | warning | telemetry"
 ```
@@ -277,6 +301,9 @@ flowchart TD
         codex[codex.py]
         opencode[opencode.py]
         pi[pi.py]
+        liaison[liaison.py]
+        escalation_mod[escalation.py]
+        liaison_coord[liaison_coordination.py]
     end
 
     subgraph schemas[schemas/]
@@ -391,6 +418,7 @@ flowchart TD
 | **Orchestration** | `router.py`, `scheduler.py`, `config.py` | Engine selection, job queuing, project config |
 | **Bridge** | `telegram/bridge.py`, `runner_bridge.py` | Message handling, execution coordination |
 | **Runner** | `runner.py`, `runners/*.py`, `schemas/*.py` | Agent CLI subprocess, JSONL parsing, event translation |
+| **Liaison** | `runners/liaison.py`, `runners/escalation.py`, `runners/liaison_coordination.py` | Natural language interpretation, tmux orchestration, swarm coordination |
 | **Transport** | `transport.py`, `presenter.py`, `telegram/client.py` | Telegram API, message rendering |
 | **Domain** | `model.py`, `progress.py`, `events.py` | Event types, action tracking |
 | **Utils** | `worktrees.py`, `utils/*.py`, `markdown.py` | Git worktrees, formatting, paths |

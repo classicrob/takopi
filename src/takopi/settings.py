@@ -89,6 +89,34 @@ class TelegramFilesSettings(BaseModel):
         return value
 
 
+class UnifiedExperienceSettings(BaseModel):
+    """Settings for the unified Telegram experience.
+
+    These features transform the interaction from separate /engine commands
+    to a seamless experience where users just send natural language.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    # Enable unified session card rendering
+    session_card: bool = False
+
+    # Enable smart routing based on request analysis
+    smart_routing: bool = False
+
+    # Only suggest multi-agent, don't auto-switch
+    smart_routing_suggest_only: bool = True
+
+    # Confidence threshold for suggesting liaison
+    smart_routing_threshold: float = Field(default=0.70, ge=0.0, le=1.0)
+
+    # Embed input requests in session card instead of separate messages
+    inline_inputs: bool = False
+
+    # Batch input requests from multiple agents (seconds to wait)
+    input_batch_delay_s: float = Field(default=2.0, ge=0.0)
+
+
 class TelegramTransportSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -107,6 +135,11 @@ class TelegramTransportSettings(BaseModel):
     media_group_debounce_s: float = Field(default=1.0, ge=0)
     topics: TelegramTopicsSettings = Field(default_factory=TelegramTopicsSettings)
     files: TelegramFilesSettings = Field(default_factory=TelegramFilesSettings)
+
+    # Unified experience settings
+    unified: UnifiedExperienceSettings = Field(
+        default_factory=UnifiedExperienceSettings
+    )
 
 
 class TransportsSettings(BaseModel):

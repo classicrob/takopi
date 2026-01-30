@@ -2,7 +2,7 @@
 
 🐙 *he just wants to help-pi*
 
-telegram bridge for codex, claude code, opencode, pi. manage multiple projects and worktrees, stream progress, and resume sessions anywhere.
+telegram bridge for codex, claude code, opencode, pi, and liaison. manage multiple projects and worktrees, stream progress, and resume sessions anywhere.
 
 ## features
 
@@ -21,7 +21,7 @@ telegram bridge for codex, claude code, opencode, pi. manage multiple projects a
 
 python 3.14+ (`uv python install 3.14`)
 
-at least one engine on PATH: `codex`, `claude`, `opencode`, or `pi`
+at least one engine on PATH: `codex`, `claude`, `opencode`, or `pi` (liaison is built-in and orchestrates other engines via tmux)
 
 ## install
 
@@ -51,7 +51,7 @@ cd ~/dev/happy-gadgets
 takopi
 ```
 
-send a message to your bot. prefix with `/codex`, `/claude`, `/opencode`, or `/pi` to pick an engine. reply to continue a thread.
+send a message to your bot. prefix with `/codex`, `/claude`, `/opencode`, `/pi`, or `/liaison` to pick an engine. reply to continue a thread.
 
 register a project with `takopi init happy-gadgets`, then target it from anywhere with `/happy-gadgets hard reset the timeline`.
 

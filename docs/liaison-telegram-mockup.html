@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Takopi Liaison - Telegram UI Flow</title>
+  <link href="https://fonts.googleapis.com/css2?family=SF+Pro+Text:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+      background: #0e1621;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      color: #fff;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #6ab3f7 0%, #9b7cf7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      color: #8b9bab;
+      font-size: 14px;
+      margin-bottom: 40px;
+    }
+
+    .phone-container {
+      display: flex;
+      gap: 60px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .phone-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .phone-label {
+      color: #6ab3f7;
+      font-size: 13px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .phone {
+      width: 375px;
+      height: 720px;
+      background: #17212b;
+      border-radius: 40px;
+      overflow: hidden;
+      box-shadow:
+        0 50px 100px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.05),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Telegram Header */
+    .tg-header {
+      background: #17212b;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .tg-back {
+      color: #6ab3f7;
+      font-size: 24px;
+    }
+
+    .tg-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .tg-chat-info {
+      flex: 1;
+    }
+
+    .tg-chat-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .tg-chat-status {
+      font-size: 13px;
+      color: #6ab3f7;
+    }
+
+    .tg-header-icons {
+      display: flex;
+      gap: 20px;
+      color: #6ab3f7;
+      font-size: 20px;
+    }
+
+    /* Chat Area */
+    .tg-chat {
+      flex: 1;
+      padding: 12px 8px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background:
+        radial-gradient(ellipse at 20% 80%, rgba(106, 179, 247, 0.03) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(155, 124, 247, 0.03) 0%, transparent 50%),
+        #0e1621;
+    }
+
+    /* Messages */
+    .msg-row {
+      display: flex;
+      flex-direction: column;
+      max-width: 85%;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .msg-row.user {
+      align-self: flex-end;
+    }
+
+    .msg-row.bot {
+      align-self: flex-start;
+    }
+
+    .msg-bubble {
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.4;
+      position: relative;
+    }
+
+    .msg-row.user .msg-bubble {
+      background: #2b5278;
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg-row.bot .msg-bubble {
+      background: #182533;
+      border-bottom-left-radius: 4px;
+    }
+
+    .msg-time {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+      margin-top: 2px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .msg-row.user .msg-time {
+      justify-content: flex-end;
+    }
+
+    .check {
+      color: #6ab3f7;
+    }
+
+    /* Bot Badge */
+    .bot-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #3390ec;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-bottom: 4px;
+    }
+
+    /* Status Message */
+    .status-msg {
+      background: #182533;
+      border-left: 3px solid #6ab3f7;
+      padding: 10px 12px;
+      border-radius: 0 12px 12px 0;
+      font-size: 13px;
+    }
+
+    .status-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #6ab3f7;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .status-label {
+      color: #6ab3f7;
+      font-weight: 500;
+      font-size: 12px;
+    }
+
+    .status-engine {
+      color: #8b9bab;
+      font-size: 11px;
+    }
+
+    .status-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 8px;
+    }
+
+    .status-step {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #8b9bab;
+    }
+
+    .step-check {
+      color: #4ade80;
+    }
+
+    .step-spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid #6ab3f7;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Subagent Pane */
+    .subagent-pane {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      padding: 8px;
+      margin-top: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .subagent-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #9b7cf7;
+      margin-bottom: 6px;
+    }
+
+    .subagent-icon {
+      width: 14px;
+      height: 14px;
+    }
+
+    .subagent-output {
+      font-family: 'SF Mono', 'Menlo', monospace;
+      font-size: 10px;
+      color: #8b9bab;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    /* Input Request */
+    .input-request {
+      background: #182533;
+      border-left: 3px solid #fbbf24;
+      padding: 12px;
+      border-radius: 0 12px 12px 0;
+    }
+
+    .input-request-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #fbbf24;
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+    .input-question {
+      font-size: 14px;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+
+    .input-context {
+      font-size: 12px;
+      color: #8b9bab;
+      font-style: italic;
+      margin-bottom: 12px;
+    }
+
+    .input-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .input-btn {
+      background: rgba(106, 179, 247, 0.1);
+      border: 1px solid rgba(106, 179, 247, 0.3);
+      color: #6ab3f7;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .input-btn:hover {
+      background: rgba(106, 179, 247, 0.2);
+    }
+
+    .input-btn.secondary {
+      background: rgba(139, 155, 171, 0.1);
+      border-color: rgba(139, 155, 171, 0.3);
+      color: #8b9bab;
+    }
+
+    /* Final Message */
+    .final-msg {
+      background: #182533;
+      border-left: 3px solid #4ade80;
+      padding: 12px;
+      border-radius: 0 12px 12px 0;
+    }
+
+    .final-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .final-check {
+      color: #4ade80;
+      font-size: 16px;
+    }
+
+    .final-label {
+      color: #4ade80;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .final-engine {
+      color: #8b9bab;
+      font-size: 11px;
+    }
+
+    .final-content {
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .resume-line {
+      font-family: 'SF Mono', 'Menlo', monospace;
+      font-size: 11px;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 6px 10px;
+      border-radius: 6px;
+      margin-top: 10px;
+      color: #8b9bab;
+    }
+
+    /* Input Bar */
+    .tg-input {
+      background: #17212b;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .tg-input-field {
+      flex: 1;
+      background: #242f3d;
+      border: none;
+      border-radius: 20px;
+      padding: 10px 16px;
+      color: #fff;
+      font-size: 14px;
+    }
+
+    .tg-input-field::placeholder {
+      color: #8b9bab;
+    }
+
+    .tg-send {
+      width: 40px;
+      height: 40px;
+      background: #3390ec;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 18px;
+    }
+
+    /* Date Separator */
+    .date-sep {
+      text-align: center;
+      padding: 8px;
+    }
+
+    .date-sep span {
+      background: rgba(0, 0, 0, 0.4);
+      color: #8b9bab;
+      font-size: 12px;
+      padding: 4px 12px;
+      border-radius: 12px;
+    }
+
+    /* Legend */
+    .legend {
+      margin-top: 40px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 800px;
+    }
+
+    .legend h3 {
+      color: #6ab3f7;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .legend-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .legend-color {
+      width: 4px;
+      height: 40px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    .legend-color.blue { background: #6ab3f7; }
+    .legend-color.yellow { background: #fbbf24; }
+    .legend-color.green { background: #4ade80; }
+    .legend-color.purple { background: #9b7cf7; }
+
+    .legend-text h4 {
+      font-size: 13px;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    .legend-text p {
+      font-size: 12px;
+      color: #8b9bab;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <h1>Takopi Liaison Agent Flow</h1>
+  <p class="subtitle">Telegram UI visualization showing multi-agent orchestration</p>
+
+  <div class="phone-container">
+    <!-- Phone 1: Initial Request & Working Status -->
+    <div class="phone-wrapper">
+      <span class="phone-label">1. Request & Progress</span>
+      <div class="phone">
+        <div class="tg-header">
+          <span class="tg-back">&#8249;</span>
+          <div class="tg-avatar">&#127419;</div>
+          <div class="tg-chat-info">
+            <div class="tg-chat-name">takopi</div>
+            <div class="tg-chat-status">online</div>
+          </div>
+          <div class="tg-header-icons">
+            <span>&#128222;</span>
+            <span>&#8942;</span>
+          </div>
+        </div>
+
+        <div class="tg-chat">
+          <div class="date-sep"><span>Today</span></div>
+
+          <!-- User Request -->
+          <div class="msg-row user">
+            <div class="msg-bubble">
+              /liaison refactor the authentication module to use JWT tokens and add refresh token support
+            </div>
+            <div class="msg-time">
+              10:32 AM <span class="check">&#10003;&#10003;</span>
+            </div>
+          </div>
+
+          <!-- Bot Status Message -->
+          <div class="msg-row bot">
+            <div class="bot-badge">&#129302; BOT</div>
+            <div class="status-msg">
+              <div class="status-header">
+                <div class="status-dot"></div>
+                <span class="status-label">working</span>
+                <span class="status-engine">&#183; liaison &#183; 45s</span>
+              </div>
+
+              <div class="status-steps">
+                <div class="status-step">
+                  <span class="step-check">&#10003;</span>
+                  Analyzing authentication module
+                </div>
+                <div class="status-step">
+                  <span class="step-check">&#10003;</span>
+                  Planning JWT implementation
+                </div>
+                <div class="status-step">
+                  <div class="step-spinner"></div>
+                  Coordinating subagents
+                </div>
+              </div>
+
+              <!-- Subagent Panes -->
+              <div class="subagent-pane">
+                <div class="subagent-header">
+                  <svg class="subagent-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="12" r="10"/>
+                  </svg>
+                  Claude Code (pane 1)
+                </div>
+                <div class="subagent-output">Reading src/auth/handler.py...
+&#10003; Identified 3 auth functions
+&#10003; Found token generation logic</div>
+              </div>
+
+              <div class="subagent-pane">
+                <div class="subagent-header">
+                  <svg class="subagent-icon" viewBox="0 0 24 24" fill="#4ade80">
+                    <rect x="4" y="4" width="16" height="16" rx="2"/>
+                  </svg>
+                  Codex (pane 2)
+                </div>
+                <div class="subagent-output">Installing pyjwt...
+&#10003; Dependencies updated
+Generating JWT utils...</div>
+              </div>
+            </div>
+            <div class="msg-time">10:32 AM</div>
+          </div>
+        </div>
+
+        <div class="tg-input">
+          <input type="text" class="tg-input-field" placeholder="Message">
+          <div class="tg-send">&#10148;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phone 2: Input Request -->
+    <div class="phone-wrapper">
+      <span class="phone-label">2. Input Request</span>
+      <div class="phone">
+        <div class="tg-header">
+          <span class="tg-back">&#8249;</span>
+          <div class="tg-avatar">&#127419;</div>
+          <div class="tg-chat-info">
+            <div class="tg-chat-name">takopi</div>
+            <div class="tg-chat-status">online</div>
+          </div>
+          <div class="tg-header-icons">
+            <span>&#128222;</span>
+            <span>&#8942;</span>
+          </div>
+        </div>
+
+        <div class="tg-chat">
+          <div class="date-sep"><span>Today</span></div>
+
+          <div class="msg-row user">
+            <div class="msg-bubble">
+              /liaison refactor the authentication module to use JWT tokens and add refresh token support
+            </div>
+            <div class="msg-time">
+              10:32 AM <span class="check">&#10003;&#10003;</span>
+            </div>
+          </div>
+
+          <!-- Input Request from Subagent -->
+          <div class="msg-row bot">
+            <div class="bot-badge">&#129302; BOT</div>
+            <div class="input-request">
+              <div class="input-request-header">
+                <span>&#9888;</span>
+                [!] Question from subagent
+              </div>
+              <div class="input-question">
+                Should I delete the existing session-based authentication or keep it as a fallback alongside JWT?
+              </div>
+              <div class="input-context">
+                (Context: Claude Code found SessionAuth class in src/auth/session.py with 47 references across the codebase)
+              </div>
+              <div class="input-buttons">
+                <div class="input-btn">Answer</div>
+                <div class="input-btn secondary">Let liaison handle</div>
+              </div>
+            </div>
+            <div class="msg-time">10:33 AM</div>
+          </div>
+        </div>
+
+        <div class="tg-input">
+          <input type="text" class="tg-input-field" placeholder="Reply to this message...">
+          <div class="tg-send">&#10148;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phone 3: User Response & Completion -->
+    <div class="phone-wrapper">
+      <span class="phone-label">3. Response & Completion</span>
+      <div class="phone">
+        <div class="tg-header">
+          <span class="tg-back">&#8249;</span>
+          <div class="tg-avatar">&#127419;</div>
+          <div class="tg-chat-info">
+            <div class="tg-chat-name">takopi</div>
+            <div class="tg-chat-status">online</div>
+          </div>
+          <div class="tg-header-icons">
+            <span>&#128222;</span>
+            <span>&#8942;</span>
+          </div>
+        </div>
+
+        <div class="tg-chat">
+          <div class="date-sep"><span>Today</span></div>
+
+          <!-- Input Request (collapsed) -->
+          <div class="msg-row bot">
+            <div class="bot-badge">&#129302; BOT</div>
+            <div class="msg-bubble" style="background: rgba(251, 191, 36, 0.1); border-left: 3px solid #fbbf24;">
+              <div style="font-size: 12px; color: #fbbf24;">Question from subagent</div>
+              <div style="font-size: 13px; color: #8b9bab;">Should I delete the existing session-based auth...</div>
+            </div>
+            <div class="msg-time">10:33 AM</div>
+          </div>
+
+          <!-- User Response -->
+          <div class="msg-row user">
+            <div class="msg-bubble">
+              Keep session auth as a fallback. Add JWT as the primary method but allow users to choose.
+            </div>
+            <div class="msg-time">
+              10:34 AM <span class="check">&#10003;&#10003;</span>
+            </div>
+          </div>
+
+          <!-- Final Completion -->
+          <div class="msg-row bot">
+            <div class="bot-badge">&#129302; BOT</div>
+            <div class="final-msg">
+              <div class="final-header">
+                <span class="final-check">&#10003;</span>
+                <span class="final-label">done</span>
+                <span class="final-engine">&#183; liaison &#183; 2m 18s &#183; step 12</span>
+              </div>
+              <div class="final-content">
+                <p>Refactored authentication to use JWT with refresh tokens:</p>
+                <br>
+                <p style="color: #8b9bab; font-size: 13px;">
+                  &#8226; Added <code style="background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">JWTAuthHandler</code> with access/refresh token support<br>
+                  &#8226; Kept <code style="background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">SessionAuth</code> as fallback (configurable)<br>
+                  &#8226; Created token refresh endpoint at <code style="background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">/auth/refresh</code><br>
+                  &#8226; Added 15 tests covering JWT flows
+                </p>
+              </div>
+              <div class="resume-line">
+                liaison --session lsn_7f8a9b2c
+              </div>
+            </div>
+            <div class="msg-time">10:34 AM</div>
+          </div>
+        </div>
+
+        <div class="tg-input">
+          <input type="text" class="tg-input-field" placeholder="Message">
+          <div class="tg-send">&#10148;</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <h3>Message Types</h3>
+    <div class="legend-grid">
+      <div class="legend-item">
+        <div class="legend-color blue"></div>
+        <div class="legend-text">
+          <h4>Progress Status</h4>
+          <p>Shows liaison working with real-time updates from subagent panes (Claude Code, Codex)</p>
+        </div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color yellow"></div>
+        <div class="legend-text">
+          <h4>Input Request</h4>
+          <p>Liaison escalates subagent questions to user. Tap "Answer" to reply or "Let liaison handle" to auto-decide</p>
+        </div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color green"></div>
+        <div class="legend-text">
+          <h4>Completion</h4>
+          <p>Final result with summary of changes. Includes resume token for continuing the session</p>
+        </div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color purple"></div>
+        <div class="legend-text">
+          <h4>Subagent Panes</h4>
+          <p>Live output from Claude Code and Codex running in tmux panes, captured via tmux capture-pane</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -9,6 +9,7 @@ Takopi parses the first non-empty line of a message for a directive prefix.
 | Directive | Example | Effect |
 |----------|---------|--------|
 | `/<engine-id>` | `/codex fix flaky test` | Select an engine for this message. |
+| `/<engine-id>` | `/liaison coordinate a complex refactor` | Use liaison for multi-agent orchestration. |
 | `/<project-alias>` | `/happy-gadgets add escape-pod` | Select a project alias. |
 | `@branch` | `@feat/happy-camera rewind to checkpoint` | Run in a worktree for the branch. |
 | Combined | `/happy-gadgets @feat/flower-pin observe unseen` | Project + branch. |

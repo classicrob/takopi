@@ -152,6 +152,41 @@ Optional:
 * `error: str | None`     (fatal error message, if any)
 * `usage: dict`           (telemetry/usage if available)
 
+#### 4.3.4 `input_request`
+
+Emitted when a liaison agent needs user input during a run.
+
+Required:
+
+* `type: "input_request"`
+* `engine: EngineId`
+* `request_id: str`  (unique within the session, used for response routing)
+* `question: str`
+* `source: "subagent" | "liaison"`
+
+Optional:
+
+* `context: str`
+* `options: list[str]` (for multiple-choice questions)
+* `urgency: "low" | "normal" | "high" | "critical"` (default: `"normal"`)
+
+Invariants:
+
+* `request_id` MUST be unique within the session
+* The bridge MUST render this as an interactive message allowing user response
+
+#### 4.3.5 `input_response`
+
+Emitted when responding to an input request.
+
+Required:
+
+* `type: "input_response"`
+* `engine: EngineId`
+* `request_id: str`  (matches the originating `input_request`)
+* `response: str`
+* `responder: "user" | "liaison" | "timeout"`
+
 ### 4.4 Action schema (MUST; stable IDs)
 
 Actions MUST have stable IDs within a run:
@@ -442,7 +477,106 @@ The lock file MUST contain JSON with:
 
 The lock file SHOULD be removed on clean shutdown. Stale locks from crashed processes are handled by the acquisition rules above.
 
-## 11. Changelog
+## 11. Liaison Protocol
+
+The Liaison Protocol extends Takopi to support natural language interpretation via an intermediate agent layer.
+
+### 11.1 Overview
+
+A **Liaison Agent** is a runner that:
+
+1. Interprets natural language user requests
+2. Operates subagents (Claude Code, Codex) via tmux
+3. Decides when to escalate questions to the user vs. answer autonomously
+4. Coordinates with other liaison agents via shared files
+
+### 11.2 Tmux Session Management
+
+Liaison runners MUST:
+
+* Create a dedicated tmux session per liaison instance
+* Use `tmux capture-pane -p` to read subagent output
+* Use `tmux send-keys` to send input to subagents
+* Persist session information for resume support
+
+Resume token format: `` `liaison --session {session_id}` ``
+
+Session state MUST be stored at `~/.takopi/liaison/sessions/{session_id}.json`.
+
+### 11.3 Escalation Policy
+
+Liaisons MUST implement an escalation policy that determines when to:
+
+* **Always escalate**: Destructive operations, production environments, credentials, billing
+* **Auto-approve**: Safe operations like mkdir, run tests, format code
+
+The policy SHOULD be configurable via patterns.
+
+### 11.4 Coordination Folder Structure
+
+Multiple liaisons coordinate via a shared folder at `~/.takopi/liaison/`:
+
+```
+~/.takopi/liaison/
+├── sessions/{session_id}.json       # Session resume info
+├── coordination/
+│   ├── inbox/{liaison_id}/*.json    # Direct messages
+│   └── broadcast/*.json             # Broadcast messages
+├── state/
+│   ├── active_liaisons.json         # Registry of running liaisons
+│   ├── task_registry.json           # Tasks and their owners
+│   └── shared_context.json          # Shared knowledge base
+└── locks/*.lock                     # File locks
+```
+
+### 11.5 Coordination Message Format
+
+```json
+{
+  "message_id": "unique_id",
+  "from_liaison": "liaison_abc",
+  "to_liaison": "liaison_def",
+  "timestamp": 1706540500.123,
+  "type": "info_share",
+  "payload": {...},
+  "expires_at": 1706626900.123
+}
+```
+
+Message types:
+
+* `info_share`: Share discovered information
+* `question`: Ask another liaison
+* `task_claim`: Claim a task to prevent duplicates
+* `task_complete`: Mark a task as done
+
+### 11.6 Input Request Flow
+
+1. Subagent asks a question (detected via pane output parsing)
+2. Liaison checks escalation policy
+3. If escalate: emit `input_request` event
+4. Bridge renders question with interactive buttons
+5. User responds or clicks "Let liaison handle"
+6. Response routed back via `input_response` event
+7. Liaison sends response to subagent via `tmux send-keys`
+
+### 11.7 Error Handling
+
+Liaison runners MUST:
+
+* Check tmux session health periodically via `tmux has-session`
+* Attempt session recovery on crash using saved session state
+* Emit `action(kind="warning")` for subagent failures
+* Escalate to user if recovery fails
+
+## 12. Changelog
+
+### v0.22.0 (2026-01-28)
+
+- Add Liaison Protocol (§11) for natural language interpretation via intermediate agent layer
+- Add `input_request` event type (§4.3.4) for liaison agents to request user input
+- Add `input_response` event type (§4.3.5) for user responses to input requests
+- Define tmux session management, escalation policy, and coordination folder structure
 
 ### v0.21.4 (2026-01-22)
 

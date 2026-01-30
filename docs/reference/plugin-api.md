@@ -70,6 +70,7 @@ dependencies = ["takopi>=0.14,<0.15"]
 | `EngineId` | Engine id type alias |
 | `ResumeToken` | Resume token (engine + value) |
 | `StartedEvent` / `ActionEvent` / `CompletedEvent` | Core event types |
+| `InputRequestEvent` / `InputResponseEvent` | User escalation events (liaison) |
 | `Action` | Action metadata for `ActionEvent` |
 | `ActionState` / `ProgressState` / `ProgressTracker` | Progress tracking helpers for presenters |
 | `RunContext` | Project/branch context |
@@ -119,7 +120,9 @@ Runners emit events in a strict sequence (see `tests/test_runner_contract.py`):
 - `CompletedEvent` is **last**
 - `CompletedEvent.resume == StartedEvent.resume`
 
-Action events are optional. The minimal valid run is:
+Action events are optional. `InputRequestEvent` and `InputResponseEvent` may appear between `StartedEvent` and `CompletedEvent` for engines that support user escalation (e.g., liaison).
+
+The minimal valid run is:
 
 ```
 StartedEvent -> CompletedEvent

@@ -138,7 +138,7 @@ Want to use a different engine for one message? Prefix your message with `/<engi
 
 This uses Claude Code for just this message. The resume line will show `claude --resume ...`, and replies will automatically use Claude.
 
-Available prefixes depend on what you have installed: `/codex`, `/claude`, `/opencode`, `/pi`.
+Available prefixes depend on what you have installed: `/codex`, `/claude`, `/opencode`, `/pi`, `/liaison`.
 
 !!! tip "Set a default engine"
     Use `/agent set claude` to make this chat (or topic) use Claude by default. Run `/agent` to see what's set.

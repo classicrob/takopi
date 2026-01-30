@@ -3,7 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from collections.abc import Callable
 
-from .model import Action, ActionEvent, ResumeToken, StartedEvent, TakopiEvent
+from .model import (
+    Action,
+    ActionEvent,
+    InputRequestEvent,
+    ResumeToken,
+    StartedEvent,
+    TakopiEvent,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +25,17 @@ class ActionState:
 
 
 @dataclass(frozen=True, slots=True)
+class InputRequestState:
+    """State of a pending input request from a liaison."""
+
+    request_id: str
+    question: str
+    source: str
+    urgency: str
+    seen_at: int
+
+
+@dataclass(frozen=True, slots=True)
 class ProgressState:
     engine: str
     action_count: int
@@ -25,6 +43,7 @@ class ProgressState:
     resume: ResumeToken | None
     resume_line: str | None
     context_line: str | None
+    input_requests: tuple[InputRequestState, ...] = ()
 
 
 class ProgressTracker:
@@ -33,6 +52,7 @@ class ProgressTracker:
         self.resume: ResumeToken | None = None
         self.action_count = 0
         self._actions: dict[str, ActionState] = {}
+        self._input_requests: dict[str, InputRequestState] = {}
         self._seq = 0
 
     def note_event(self, event: TakopiEvent) -> bool:
@@ -70,8 +90,27 @@ class ProgressTracker:
                     last_update=seq,
                 )
                 return True
+            case InputRequestEvent(
+                request_id=request_id,
+                question=question,
+                source=source,
+                urgency=urgency,
+            ):
+                self._seq += 1
+                self._input_requests[request_id] = InputRequestState(
+                    request_id=request_id,
+                    question=question,
+                    source=source,
+                    urgency=urgency,
+                    seen_at=self._seq,
+                )
+                return True
             case _:
                 return False
+
+    def clear_input_request(self, request_id: str) -> None:
+        """Remove an input request after it has been answered."""
+        self._input_requests.pop(request_id, None)
 
     def set_resume(self, resume: ResumeToken | None) -> None:
         if resume is not None:
@@ -89,6 +128,9 @@ class ProgressTracker:
         actions = tuple(
             sorted(self._actions.values(), key=lambda item: item.first_seen)
         )
+        input_requests = tuple(
+            sorted(self._input_requests.values(), key=lambda item: item.seen_at)
+        )
         return ProgressState(
             engine=self.engine,
             action_count=self.action_count,
@@ -96,4 +138,5 @@ class ProgressTracker:
             resume=self.resume,
             resume_line=resume_line,
             context_line=context_line,
+            input_requests=input_requests,
         )

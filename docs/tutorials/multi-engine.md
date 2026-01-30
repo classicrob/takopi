@@ -14,6 +14,7 @@ Different engines have different strengths:
 | **Claude Code** | Complex refactors, architecture, long context |
 | **OpenCode** | Open-source alternative, local models |
 | **Pi** | Conversational, explanations |
+| **Liaison** | Multi-agent orchestration, complex multi-step workflows |
 
 You might want Codex for quick tasks and Claude for deep work—without manually specifying every time.
 
@@ -29,6 +30,9 @@ Prefix any message with `/<engine>`:
 
 !!! user "You"
     /pi explain how the event loop works in this codebase
+
+!!! user "You"
+    /liaison break down this task and coordinate multiple agents to complete it
 
 The engine only applies to that message. The response will have a resume line for that engine:
 

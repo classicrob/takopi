@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Takopi - How It Scales</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --tg-bg: #0e1621;
+            --tg-bg-secondary: #17212b;
+            --tg-bg-tertiary: #1c2733;
+            --tg-border: #2b3945;
+            --tg-text: #f5f5f5;
+            --tg-text-secondary: #8b9fad;
+            --tg-text-tertiary: #6b7c8a;
+            --tg-accent: #3390ec;
+            --tg-accent-soft: rgba(51, 144, 236, 0.15);
+            --tg-user-bubble: #2b5278;
+            --tg-bot-bubble: #182533;
+            --tg-success: #4fae4e;
+            --tg-warning: #e5a545;
+            --tg-error: #e55353;
+            --claude-color: #d97706;
+            --codex-color: #10b981;
+            --test-color: #8b5cf6;
+            --lint-color: #ec4899;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--tg-bg);
+            color: var(--tg-text);
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+            margin-bottom: 12px;
+        }
+
+        .header p {
+            color: var(--tg-text-secondary);
+            font-size: 16px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* Scale indicator */
+        .scale-nav {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
+        }
+
+        .scale-btn {
+            padding: 10px 20px;
+            border-radius: 24px;
+            font-size: 14px;
+            font-weight: 500;
+            border: 1px solid var(--tg-border);
+            background: var(--tg-bg-secondary);
+            color: var(--tg-text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .scale-btn:hover {
+            border-color: var(--tg-accent);
+            color: var(--tg-text);
+        }
+
+        .scale-btn.active {
+            background: var(--tg-accent);
+            border-color: var(--tg-accent);
+            color: white;
+        }
+
+        /* Scenarios grid */
+        .scenarios {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+            gap: 32px;
+        }
+
+        .scenario {
+            background: var(--tg-bg-secondary);
+            border-radius: 24px;
+            overflow: hidden;
+            border: 1px solid var(--tg-border);
+        }
+
+        .scenario-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--tg-border);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .scenario-badge {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .scenario-badge.simple {
+            background: rgba(79, 174, 78, 0.15);
+            color: var(--tg-success);
+        }
+
+        .scenario-badge.medium {
+            background: rgba(51, 144, 236, 0.15);
+            color: var(--tg-accent);
+        }
+
+        .scenario-badge.complex {
+            background: rgba(139, 92, 246, 0.15);
+            color: #8b5cf6;
+        }
+
+        .scenario-badge.swarm {
+            background: rgba(236, 72, 153, 0.15);
+            color: #ec4899;
+        }
+
+        .scenario-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        /* Phone screen inside scenario */
+        .phone-screen {
+            background: var(--tg-bg);
+            min-height: 520px;
+        }
+
+        .chat-header {
+            background: var(--tg-bg-secondary);
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid var(--tg-border);
+        }
+
+        .chat-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .chat-name {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .chat-status {
+            font-size: 12px;
+            color: var(--tg-text-secondary);
+        }
+
+        .messages {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .message {
+            max-width: 92%;
+        }
+
+        .message.user {
+            align-self: flex-end;
+        }
+
+        .message.bot {
+            align-self: flex-start;
+        }
+
+        .bubble {
+            padding: 10px 14px;
+            border-radius: 18px;
+            font-size: 13px;
+        }
+
+        .message.user .bubble {
+            background: var(--tg-user-bubble);
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.bot .bubble {
+            background: var(--tg-bot-bubble);
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-time {
+            font-size: 10px;
+            color: var(--tg-text-tertiary);
+            margin-top: 4px;
+        }
+
+        .message.user .message-time {
+            text-align: right;
+        }
+
+        /* Session Card */
+        .session-card {
+            background: var(--tg-bg-tertiary);
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid var(--tg-border);
+        }
+
+        .session-header {
+            padding: 12px 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .session-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .session-icon.working {
+            background: var(--tg-accent-soft);
+            color: var(--tg-accent);
+        }
+
+        .session-icon.complete {
+            background: rgba(79, 174, 78, 0.15);
+            color: var(--tg-success);
+        }
+
+        .session-icon.paused {
+            background: rgba(229, 165, 69, 0.15);
+            color: var(--tg-warning);
+        }
+
+        .session-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .session-title {
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .session-status {
+            font-size: 11px;
+            color: var(--tg-text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .status-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--tg-accent);
+            animation: blink 1.5s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* Agent badges */
+        .session-agents {
+            padding: 0 14px 10px;
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .agent-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 500;
+            background: var(--tg-bg-secondary);
+            border: 1px solid var(--tg-border);
+        }
+
+        .agent-badge .dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+        }
+
+        .agent-badge.claude .dot { background: var(--claude-color); }
+        .agent-badge.codex .dot { background: var(--codex-color); }
+        .agent-badge.test .dot { background: var(--test-color); }
+        .agent-badge.lint .dot { background: var(--lint-color); }
+        .agent-badge.idle .dot { background: var(--tg-text-tertiary); }
+
+        /* Activity feed */
+        .session-activity {
+            border-top: 1px solid var(--tg-border);
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .activity-item {
+            padding: 8px 14px;
+            font-size: 11px;
+            border-bottom: 1px solid rgba(43, 57, 69, 0.5);
+            display: flex;
+            gap: 8px;
+        }
+
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+
+        .activity-time {
+            color: var(--tg-text-tertiary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            flex-shrink: 0;
+            width: 32px;
+        }
+
+        .activity-content {
+            color: var(--tg-text-secondary);
+            flex: 1;
+        }
+
+        .activity-content code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--tg-bg);
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-size: 10px;
+        }
+
+        .activity-agent {
+            font-weight: 500;
+        }
+
+        .activity-agent.claude { color: var(--claude-color); }
+        .activity-agent.codex { color: var(--codex-color); }
+        .activity-agent.test { color: var(--test-color); }
+        .activity-agent.lint { color: var(--lint-color); }
+
+        /* Session controls */
+        .session-controls {
+            padding: 10px 14px;
+            border-top: 1px solid var(--tg-border);
+            display: flex;
+            gap: 6px;
+        }
+
+        .control-btn {
+            flex: 1;
+            padding: 7px 10px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .control-btn.primary {
+            background: var(--tg-accent);
+            color: white;
+        }
+
+        .control-btn.secondary {
+            background: var(--tg-bg-secondary);
+            color: var(--tg-text-secondary);
+            border: 1px solid var(--tg-border);
+        }
+
+        /* Input prompt */
+        .input-prompt {
+            background: var(--tg-bg-tertiary);
+            border-radius: 14px;
+            border: 1px solid var(--tg-border);
+            overflow: hidden;
+        }
+
+        .prompt-header {
+            padding: 10px 14px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .prompt-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            background: rgba(229, 165, 69, 0.15);
+            color: var(--tg-warning);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+
+        .prompt-content {
+            flex: 1;
+        }
+
+        .prompt-source {
+            font-size: 10px;
+            color: var(--tg-text-tertiary);
+            margin-bottom: 3px;
+        }
+
+        .prompt-question {
+            font-size: 12px;
+            color: var(--tg-text);
+        }
+
+        .prompt-actions {
+            padding: 10px 14px;
+            padding-top: 0;
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .prompt-btn {
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 11px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+        }
+
+        .prompt-btn.approve {
+            background: var(--tg-accent);
+            color: white;
+        }
+
+        .prompt-btn.deny {
+            background: var(--tg-bg-secondary);
+            color: var(--tg-text-secondary);
+            border: 1px solid var(--tg-border);
+        }
+
+        .prompt-btn.custom {
+            background: transparent;
+            color: var(--tg-accent);
+            border: 1px solid var(--tg-accent);
+        }
+
+        /* Multi-question prompt */
+        .multi-prompt {
+            background: var(--tg-bg-tertiary);
+            border-radius: 14px;
+            border: 1px solid var(--tg-border);
+            overflow: hidden;
+        }
+
+        .multi-prompt-header {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--tg-border);
+            font-size: 11px;
+            color: var(--tg-text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .multi-prompt-header .count {
+            background: var(--tg-warning);
+            color: var(--tg-bg);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 10px;
+        }
+
+        .prompt-item {
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(43, 57, 69, 0.5);
+        }
+
+        .prompt-item:last-child {
+            border-bottom: none;
+        }
+
+        .prompt-item-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .prompt-item-agent {
+            font-size: 10px;
+            font-weight: 500;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+
+        .prompt-item-agent.claude {
+            background: rgba(217, 119, 6, 0.15);
+            color: var(--claude-color);
+        }
+
+        .prompt-item-agent.codex {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--codex-color);
+        }
+
+        .prompt-item-question {
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .prompt-item-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        /* Annotation callouts */
+        .annotation {
+            margin-top: 16px;
+            padding: 14px 18px;
+            background: rgba(51, 144, 236, 0.08);
+            border-left: 3px solid var(--tg-accent);
+            border-radius: 0 8px 8px 0;
+            font-size: 12px;
+            color: var(--tg-text-secondary);
+        }
+
+        .annotation strong {
+            color: var(--tg-text);
+        }
+
+        /* Parallel work indicator */
+        .parallel-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            background: rgba(139, 92, 246, 0.1);
+            border-radius: 8px;
+            margin: 8px 0;
+            font-size: 11px;
+            color: #8b5cf6;
+        }
+
+        .parallel-indicator .bars {
+            display: flex;
+            gap: 2px;
+        }
+
+        .parallel-indicator .bar {
+            width: 3px;
+            height: 14px;
+            border-radius: 2px;
+            animation: barPulse 1s infinite;
+        }
+
+        .parallel-indicator .bar:nth-child(1) { background: var(--claude-color); animation-delay: 0s; }
+        .parallel-indicator .bar:nth-child(2) { background: var(--codex-color); animation-delay: 0.2s; }
+        .parallel-indicator .bar:nth-child(3) { background: var(--test-color); animation-delay: 0.4s; }
+        .parallel-indicator .bar:nth-child(4) { background: var(--lint-color); animation-delay: 0.6s; }
+
+        @keyframes barPulse {
+            0%, 100% { transform: scaleY(1); }
+            50% { transform: scaleY(0.5); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Same UI, Any Scale</h1>
+            <p>From a single quick task to a coordinated swarm of agents, the experience is identical. Complexity reveals itself only when you expand the details.</p>
+        </header>
+
+        <div class="scale-nav">
+            <button class="scale-btn active">1 Agent</button>
+            <button class="scale-btn">2 Agents</button>
+            <button class="scale-btn">3+ Agents</button>
+            <button class="scale-btn">Parallel Swarm</button>
+        </div>
+
+        <div class="scenarios">
+            <!-- SCENARIO 1: Single Agent (Simple) -->
+            <div class="scenario">
+                <div class="scenario-header">
+                    <span class="scenario-badge simple">1 Agent</span>
+                    <span class="scenario-title">Quick fix</span>
+                </div>
+                <div class="phone-screen">
+                    <div class="chat-header">
+                        <div class="chat-avatar">&#129430;</div>
+                        <div>
+                            <div class="chat-name">Takopi</div>
+                            <div class="chat-status">online</div>
+                        </div>
+                    </div>
+                    <div class="messages">
+                        <div class="message user">
+                            <div class="bubble">Fix the typo in the README header</div>
+                            <div class="message-time">3:12 PM</div>
+                        </div>
+
+                        <div class="message bot">
+                            <div class="session-card">
+                                <div class="session-header">
+                                    <div class="session-icon working">&#9881;</div>
+                                    <div class="session-info">
+                                        <div class="session-title">Fixing README typo</div>
+                                        <div class="session-status">
+                                            <span class="status-dot"></span>
+                                            Working...
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="session-agents">
+                                    <span class="agent-badge claude">
+                                        <span class="dot"></span>
+                                        Claude
+                                    </span>
+                                </div>
+                                <div class="session-controls">
+                                    <button class="control-btn secondary">&#10074;&#10074; Pause</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="message bot" style="margin-top: 8px;">
+                            <div class="session-card">
+                                <div class="session-header">
+                                    <div class="session-icon complete">&#10003;</div>
+                                    <div class="session-info">
+                                        <div class="session-title">README typo fixed</div>
+                                        <div class="session-status" style="color: var(--tg-success);">
+                                            Done &middot; 1 file changed
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="session-controls">
+                                    <button class="control-btn primary">&#8617; Continue</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="annotation">
+                    <strong>Simple tasks stay simple.</strong> One agent badge, minimal UI. No unnecessary complexity exposed.
+                </div>
+            </div>
+
+            <!-- SCENARIO 2: Two Agents -->
+            <div class="scenario">
+                <div class="scenario-header">
+                    <span class="scenario-badge medium">2 Agents</span>
+                    <span class="scenario-title">Code + Tests</span>
+                </div>
+                <div class="phone-screen">
+                    <div class="chat-header">
+                        <div class="chat-avatar">&#129430;</div>
+                        <div>
+                            <div class="chat-name">Takopi</div>
+                            <div class="chat-status">online</div>
+                        </div>
+                    </div>
+                    <div class="messages">
+                        <div class="message user">
+                            <div class="bubble">Add email validation to the signup form and write tests</div>
+                            <div class="message-time">3:15 PM</div>
+                        </div>
+
+                        <div class="message bot">
+                            <div class="session-card">
+                                <div class="session-header">
+                                    <div class="session-icon working">&#9881;</div>
+                                    <div class="session-info">
+                                        <div class="session-title">Email validation + tests</div>
+                                        <div class="session-status">
+                                            <span class="status-dot"></span>
+                                            Working...
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="session-agents">
+                                    <span class="agent-badge claude">
+                                        <span class="dot"></span>
+                                        Claude
+                                    </span>
+                                    <span class="agent-badge test">
+                                        <span class="dot"></span>
+                                        Tests
+                                    </span>
+                                </div>
+                                <div class="session-activity">
+                                    <div class="activity-item">
+                                        <span class="activity-time">3:15</span>
+                                        <span class="activity-content">
+                                            <span class="activity-agent claude">Claude</span> reading <code>signup.tsx</code>
+                                        </span>
+                                    </div>
+                                    <div class="activity-item">
+                                        <span class="activity-time">3:15</span>
+                                        <span class="activity-content">
+                                            <span class="activity-agent claude">Claude</span> adding validation to form
+                                        </span>
+                                    </div>
+                                    <div class="activity-item">
+                                        <span class="activity-time">3:16</span>
+                                        <span class="activity-content">
+                                            <span class="activity-agent test">Tests</span> writing <code>signup.test.ts</code>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="session-controls">
+                                    <button class="control-btn secondary">&#10074;&#10074; Pause</button>
+                                    <button class="control-btn secondary">&#128065; Watch</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Question from one agent -->
+                        <div class="message bot" style="margin-top: 8px;">
+                            <div class="input-prompt">
+                                <div class="prompt-header">
+                                    <div class="prompt-icon">?</div>
+                                    <div class="prompt-content">
+                                        <div class="prompt-source">From Claude</div>
+                                        <div class="prompt-question">
+                                            Should I use regex or a library like validator.js for email validation?
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="prompt-actions">
+                                    <button class="prompt-btn approve">Use regex</button>
+                                    <button class="prompt-btn deny">Use library</button>
+                                    <button class="prompt-btn custom">Reply...</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="annotation">
+                    <strong>Two agents, same card.</strong> Activity feed shows who's doing what. Questions identify their source but appear inline like any other prompt.
+                </div>
+            </div>
+
+            <!-- SCENARIO 3: Three+ Agents -->
+            <div class="scenario">
+                <div class="scenario-header">
+                    <span class="scenario-badge complex">3+ Agents</span>
+                    <span class="scenario-title">Full Feature</span>
+                </div>
+                <div class="phone-screen">
+                    <div class="chat-header">
+                        <div class="chat-avatar">&#129430;</div>
+                        <div>
+                            <div class="chat-name">Takopi</div>
+                            <div class="chat-status">online</div>
+                        </div>
+                    </div>
+                    <div class="messages">
+                        <div class="message user">
+                            <div class="bubble">Build a user profile page with avatar upload, make sure it passes lint and tests</div>
+                            <div class="message-time">3:20 PM</div>
+                        </div>
+
+                        <div class="message bot">
+                            <div class="session-card">
+                                <div class="session-header">
+                                    <div class="session-icon working">&#9881;</div>
+                                    <div class="session-info">
+                                        <div class="session-title">User profile with avatar</div>
+                                        <div class="session-status">
+                                            <span class="status-dot"></span>
+                                            3 agents working...
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="session-agents">
+                                    <span class="agent-badge claude">
+                                        <span class="dot"></span>
+                                        Claude
+                                    </span>
+                                    <span class="agent-badge codex">
+                                        <span class="dot"></span>
+                                        Codex
+                                    </span>
+                                    <span class="agent-badge test idle">
+                                        <span class="dot"></span>
+                                        Tests
+                                    </span>
+                                    <span class="agent-badge lint idle">
+                                        <span class="dot"></span>
+                                        Lint
+                                    </span>
+                                </div>
+                                <div class="session-activity">
+                                    <div class="activity-item">
+                                        <span class="activity-time">3:20</span>
+                                        <span class="activity-content">
+                                            <span class="activity-agent claude">Claude</span> planning component structure
+                                        </span>
+                                    </div>
+                                    <div class="activity-item">
+                                        <span class="activity-time">3:21</span>
+                                        <span class="activity-content">
+                                            <span class="activity-agent claude">Claude</span> creating <code>ProfilePage.tsx</code>
+                                        </span>
+                                    </div>
+                                    <div class="activity-item">
+                                        <span class="activity-time">3:21</span>
+                                        <span class="activity-content">
+                                            <span class="activity-agent codex">Codex</span> building <code>AvatarUpload.tsx</code>
+                                        </span>
+                                    </div>
+                                    <div class="activity-item">
+                                        <span class="activity-time">3:22</span>
+                                        <span class="activity-content">
+                                            <span class="activity-agent codex">Codex</span> adding S3 upload logic
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="session-controls">
+                                    <button class="control-btn secondary">&#10074;&#10074; Pause</button>
+                                    <button class="control-btn secondary">&#128065; Watch</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Multiple questions batched -->
+                        <div class="message bot" style="margin-top: 8px;">
+                            <div class="multi-prompt">
+                                <div class="multi-prompt-header">
+                                    <span class="count">2</span>
+                                    Questions need your input
+                                </div>
+                                <div class="prompt-item">
+                                    <div class="prompt-item-header">
+                                        <span class="prompt-item-agent claude">Claude</span>
+                                    </div>
+                                    <div class="prompt-item-question">
+                                        Max file size for avatar uploads?
+                                    </div>
+                                    <div class="prompt-item-actions">
+                                        <button class="prompt-btn approve">5MB</button>
+                                        <button class="prompt-btn deny">10MB</button>
+                                        <button class="prompt-btn custom">Custom...</button>
+                                    </div>
+                                </div>
+                                <div class="prompt-item">
+                                    <div class="prompt-item-header">
+                                        <span class="prompt-item-agent codex">Codex</span>
+                                    </div>
+                                    <div class="prompt-item-question">
+                                        Store avatars in S3 or local filesystem?
+                                    </div>
+                                    <div class="prompt-item-actions">
+                                        <button class="prompt-btn approve">S3</button>
+                                        <button class="prompt-btn deny">Local</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="annotation">
+                    <strong>Questions batch naturally.</strong> When multiple agents need input, questions group together. Answer them all at once or one at a time.
+                </div>
+            </div>
+
+            <!-- SCENARIO 4: Parallel Swarm -->
+            <div class="scenario">
+                <div class="scenario-header">
+                    <span class="scenario-badge swarm">Swarm</span>
+                    <span class="scenario-title">Parallel Execution</span>
+                </div>
+                <div class="phone-screen">
+                    <div class="chat-header">
+                        <div class="chat-avatar">&#129430;</div>
+                        <div>
+                            <div class="chat-name">Takopi</div>
+                            <div class="chat-status">online</div>
+                        </div>
+                    </div>
+                    <div class="messages">
+                        <div class="message user">
+                            <div class="bubble">Refactor the auth module, update all consumers, run full test suite and lint</div>
+                            <div class="message-time">3:30 PM</div>
+                        </div>
+
+                        <div class="message bot">
+                            <div class="session-card">
+                                <div class="session-header">
+                                    <div class="session-icon working">&#9881;</div>
+                                    <div class="session-info">
+                                        <div class="session-title">Auth module refactor</div>
+                                        <div class="session-status">
+                                            <span class="status-dot"></span>
+                                            Coordinating 4 agents...
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="session-agents">
+                                    <span class="agent-badge claude">
+                                        <span class="dot"></span>
+                                        Claude (lead)
+                                    </span>
+                                    <span class="agent-badge codex">
+                                        <span class="dot"></span>
+                                        Codex
+                                    </span>
+                                    <span class="agent-badge test">
+                                        <span class="dot"></span>
+                                        Tests
+                                    </span>
+                                    <span class="agent-badge lint">
+                                        <span class="dot"></span>
+                                        Lint
+                                    </span>
+                                </div>
+
+                                <div class="parallel-indicator">
+                                    <div class="bars">
+                                        <div class="bar"></div>
+                                        <div class="bar"></div>
+                                        <div class="bar"></div>
+                                        <div class="bar"></div>
+                                    </div>
+                                    Running in parallel
+                                </div>
+
+                                <div class="session-activity">
+                                    <div class="activity-item">
+                                        <span class="activity-time">3:30</span>
+                                        <span class="activity-content">
+                                            <span class="activity-agent claude">Claude</span> refactoring <code>auth/index.ts</code>
+                                        </span>
+                                    </div>
+                                    <div class="activity-item">
+                                        <span class="activity-time">3:30</span>
+                                        <span class="activity-content">
+                                            <span class="activity-agent codex">Codex</span> updating <code>api/users.ts</code>
+                                        </span>
+                                    </div>
+                                    <div class="activity-item">
+                                        <span class="activity-time">3:30</span>
+                                        <span class="activity-content">
+                                            <span class="activity-agent codex">Codex</span> updating <code>api/sessions.ts</code>
+                                        </span>
+                                    </div>
+                                    <div class="activity-item">
+                                        <span class="activity-time">3:31</span>
+                                        <span class="activity-content">
+                                            <span class="activity-agent test">Tests</span> running <code>auth.test.ts</code>
+                                        </span>
+                                    </div>
+                                    <div class="activity-item">
+                                        <span class="activity-time">3:31</span>
+                                        <span class="activity-content">
+                                            <span class="activity-agent lint">Lint</span> checking modified files
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="session-controls">
+                                    <button class="control-btn secondary">&#10074;&#10074; Pause All</button>
+                                    <button class="control-btn secondary">&#128065; Watch</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- High-priority escalation -->
+                        <div class="message bot" style="margin-top: 8px;">
+                            <div class="input-prompt" style="border-color: var(--tg-error);">
+                                <div class="prompt-header">
+                                    <div class="prompt-icon" style="background: rgba(229, 83, 83, 0.15); color: var(--tg-error);">!</div>
+                                    <div class="prompt-content">
+                                        <div class="prompt-source" style="color: var(--tg-error);">&#9888; From Claude (high priority)</div>
+                                        <div class="prompt-question">
+                                            This will change the auth token format. 47 files will need updates. Proceed?
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="prompt-actions">
+                                    <button class="prompt-btn approve">Yes, proceed</button>
+                                    <button class="prompt-btn deny">No, keep format</button>
+                                    <button class="prompt-btn custom">Let me see the files...</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="annotation">
+                    <strong>Parallel work, single view.</strong> The "Running in parallel" indicator shows concurrent execution. High-priority questions stand out visually but use the same interaction pattern.
+                </div>
+            </div>
+        </div>
+
+        <!-- Key insight summary -->
+        <div style="margin-top: 60px; text-align: center;">
+            <div style="display: inline-block; background: var(--tg-bg-secondary); border-radius: 16px; padding: 32px 48px; border: 1px solid var(--tg-border); max-width: 700px;">
+                <h2 style="font-size: 20px; margin-bottom: 16px;">The Unifying Principle</h2>
+                <p style="color: var(--tg-text-secondary); font-size: 14px; line-height: 1.7;">
+                    Every scenario uses the same three components:<br><br>
+                    <strong style="color: var(--tg-text);">1. Session Card</strong> &mdash; shows what's happening (scales from 1 to N agents)<br>
+                    <strong style="color: var(--tg-text);">2. Activity Feed</strong> &mdash; shows the details (expand when curious)<br>
+                    <strong style="color: var(--tg-text);">3. Input Prompts</strong> &mdash; collect decisions (same buttons, same replies)<br><br>
+                    The user never thinks "am I in simple mode or complex mode?" They just talk to Takopi.
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

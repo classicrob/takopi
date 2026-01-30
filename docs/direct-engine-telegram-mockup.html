@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Takopi Direct Engine - Telegram UI Flow (Before Liaison)</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+      background: #0e1621;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      color: #fff;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #4ade80 0%, #6ab3f7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      color: #8b9bab;
+      font-size: 14px;
+      margin-bottom: 40px;
+    }
+
+    .phone-container {
+      display: flex;
+      gap: 60px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .phone-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .phone-label {
+      color: #4ade80;
+      font-size: 13px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .phone {
+      width: 375px;
+      height: 667px;
+      background: #17212b;
+      border-radius: 40px;
+      overflow: hidden;
+      box-shadow:
+        0 50px 100px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.05),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tg-header {
+      background: #17212b;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .tg-back {
+      color: #6ab3f7;
+      font-size: 24px;
+    }
+
+    .tg-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .tg-chat-info {
+      flex: 1;
+    }
+
+    .tg-chat-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .tg-chat-status {
+      font-size: 13px;
+      color: #6ab3f7;
+    }
+
+    .tg-header-icons {
+      display: flex;
+      gap: 20px;
+      color: #6ab3f7;
+      font-size: 20px;
+    }
+
+    .tg-chat {
+      flex: 1;
+      padding: 12px 8px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background:
+        radial-gradient(ellipse at 20% 80%, rgba(74, 222, 128, 0.03) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(106, 179, 247, 0.03) 0%, transparent 50%),
+        #0e1621;
+    }
+
+    .msg-row {
+      display: flex;
+      flex-direction: column;
+      max-width: 85%;
+    }
+
+    .msg-row.user {
+      align-self: flex-end;
+    }
+
+    .msg-row.bot {
+      align-self: flex-start;
+    }
+
+    .msg-bubble {
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .msg-row.user .msg-bubble {
+      background: #2b5278;
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg-row.bot .msg-bubble {
+      background: #182533;
+      border-bottom-left-radius: 4px;
+    }
+
+    .msg-time {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+      margin-top: 2px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .msg-row.user .msg-time {
+      justify-content: flex-end;
+    }
+
+    .check {
+      color: #6ab3f7;
+    }
+
+    .bot-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #3390ec;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-bottom: 4px;
+    }
+
+    /* Progress Message */
+    .progress-msg {
+      background: #182533;
+      border-left: 3px solid #6ab3f7;
+      padding: 10px 12px;
+      border-radius: 0 12px 12px 0;
+      font-size: 13px;
+    }
+
+    .progress-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .progress-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #6ab3f7;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .progress-label {
+      color: #6ab3f7;
+      font-weight: 500;
+      font-size: 12px;
+    }
+
+    .progress-engine {
+      color: #8b9bab;
+      font-size: 11px;
+    }
+
+    .progress-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 8px;
+    }
+
+    .progress-step {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #8b9bab;
+    }
+
+    .step-check {
+      color: #4ade80;
+    }
+
+    .step-spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid #6ab3f7;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Final Message */
+    .final-msg {
+      background: #182533;
+      border-left: 3px solid #4ade80;
+      padding: 12px;
+      border-radius: 0 12px 12px 0;
+    }
+
+    .final-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .final-check {
+      color: #4ade80;
+      font-size: 16px;
+    }
+
+    .final-label {
+      color: #4ade80;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .final-engine {
+      color: #8b9bab;
+      font-size: 11px;
+    }
+
+    .final-content {
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .resume-line {
+      font-family: 'SF Mono', 'Menlo', monospace;
+      font-size: 11px;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 6px 10px;
+      border-radius: 6px;
+      margin-top: 10px;
+      color: #8b9bab;
+    }
+
+    .tg-input {
+      background: #17212b;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .tg-input-field {
+      flex: 1;
+      background: #242f3d;
+      border: none;
+      border-radius: 20px;
+      padding: 10px 16px;
+      color: #fff;
+      font-size: 14px;
+    }
+
+    .tg-input-field::placeholder {
+      color: #8b9bab;
+    }
+
+    .tg-send {
+      width: 40px;
+      height: 40px;
+      background: #3390ec;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 18px;
+    }
+
+    .date-sep {
+      text-align: center;
+      padding: 8px;
+    }
+
+    .date-sep span {
+      background: rgba(0, 0, 0, 0.4);
+      color: #8b9bab;
+      font-size: 12px;
+      padding: 4px 12px;
+      border-radius: 12px;
+    }
+
+    /* Comparison Box */
+    .comparison {
+      margin-top: 40px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 700px;
+    }
+
+    .comparison h3 {
+      color: #4ade80;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .comparison-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .comparison-table th,
+    .comparison-table td {
+      text-align: left;
+      padding: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 13px;
+    }
+
+    .comparison-table th {
+      color: #8b9bab;
+      font-weight: 500;
+    }
+
+    .comparison-table td {
+      color: #fff;
+    }
+
+    .comparison-table td:first-child {
+      color: #6ab3f7;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .tag.direct {
+      background: rgba(74, 222, 128, 0.2);
+      color: #4ade80;
+    }
+
+    .tag.liaison {
+      background: rgba(155, 124, 247, 0.2);
+      color: #9b7cf7;
+    }
+  </style>
+</head>
+<body>
+  <h1>Direct Engine Mode (Before Liaison)</h1>
+  <p class="subtitle">Simple /claude or /codex commands with direct execution</p>
+
+  <div class="phone-container">
+    <!-- Phone 1: Send Request -->
+    <div class="phone-wrapper">
+      <span class="phone-label">1. Send Command</span>
+      <div class="phone">
+        <div class="tg-header">
+          <span class="tg-back">&#8249;</span>
+          <div class="tg-avatar">&#127419;</div>
+          <div class="tg-chat-info">
+            <div class="tg-chat-name">takopi</div>
+            <div class="tg-chat-status">online</div>
+          </div>
+          <div class="tg-header-icons">
+            <span>&#128222;</span>
+            <span>&#8942;</span>
+          </div>
+        </div>
+
+        <div class="tg-chat">
+          <div class="date-sep"><span>Today</span></div>
+
+          <!-- User Request -->
+          <div class="msg-row user">
+            <div class="msg-bubble">
+              /claude add JWT authentication to the login endpoint
+            </div>
+            <div class="msg-time">
+              10:32 AM <span class="check">&#10003;&#10003;</span>
+            </div>
+          </div>
+
+          <!-- Progress Message -->
+          <div class="msg-row bot">
+            <div class="bot-badge">&#129302; BOT</div>
+            <div class="progress-msg">
+              <div class="progress-header">
+                <div class="progress-dot"></div>
+                <span class="progress-label">working</span>
+                <span class="progress-engine">&#183; claude &#183; 12s &#183; step 3</span>
+              </div>
+
+              <div class="progress-steps">
+                <div class="progress-step">
+                  <span class="step-check">&#10003;</span>
+                  tool: read src/auth/login.py
+                </div>
+                <div class="progress-step">
+                  <span class="step-check">&#10003;</span>
+                  tool: read src/config.py
+                </div>
+                <div class="progress-step">
+                  <div class="step-spinner"></div>
+                  tool: edit src/auth/login.py
+                </div>
+              </div>
+            </div>
+            <div class="msg-time">10:32 AM</div>
+          </div>
+        </div>
+
+        <div class="tg-input">
+          <input type="text" class="tg-input-field" placeholder="Message">
+          <div class="tg-send">&#10148;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phone 2: Completion -->
+    <div class="phone-wrapper">
+      <span class="phone-label">2. Completion</span>
+      <div class="phone">
+        <div class="tg-header">
+          <span class="tg-back">&#8249;</span>
+          <div class="tg-avatar">&#127419;</div>
+          <div class="tg-chat-info">
+            <div class="tg-chat-name">takopi</div>
+            <div class="tg-chat-status">online</div>
+          </div>
+          <div class="tg-header-icons">
+            <span>&#128222;</span>
+            <span>&#8942;</span>
+          </div>
+        </div>
+
+        <div class="tg-chat">
+          <div class="date-sep"><span>Today</span></div>
+
+          <div class="msg-row user">
+            <div class="msg-bubble">
+              /claude add JWT authentication to the login endpoint
+            </div>
+            <div class="msg-time">
+              10:32 AM <span class="check">&#10003;&#10003;</span>
+            </div>
+          </div>
+
+          <!-- Final Message -->
+          <div class="msg-row bot">
+            <div class="bot-badge">&#129302; BOT</div>
+            <div class="final-msg">
+              <div class="final-header">
+                <span class="final-check">&#10003;</span>
+                <span class="final-label">done</span>
+                <span class="final-engine">&#183; claude &#183; 28s &#183; step 5</span>
+              </div>
+              <div class="final-content">
+                <p>Added JWT authentication to the login endpoint:</p>
+                <br>
+                <p style="color: #8b9bab; font-size: 13px;">
+                  &#8226; Created <code style="background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">generate_jwt_token()</code> in auth/login.py<br>
+                  &#8226; Added JWT_SECRET to config.py<br>
+                  &#8226; Login now returns access token in response<br>
+                  &#8226; Added token validation middleware
+                </p>
+              </div>
+              <div class="resume-line">
+                claude --resume 019bb89b-1b0b-7e90
+              </div>
+            </div>
+            <div class="msg-time">10:33 AM</div>
+          </div>
+
+          <!-- Follow-up -->
+          <div class="msg-row user">
+            <div class="msg-bubble">
+              also add refresh tokens
+            </div>
+            <div class="msg-time">
+              10:34 AM <span class="check">&#10003;&#10003;</span>
+            </div>
+          </div>
+
+          <div class="msg-row bot">
+            <div class="bot-badge">&#129302; BOT</div>
+            <div class="final-msg">
+              <div class="final-header">
+                <span class="final-check">&#10003;</span>
+                <span class="final-label">done</span>
+                <span class="final-engine">&#183; claude &#183; 15s &#183; step 3</span>
+              </div>
+              <div class="final-content">
+                <p style="font-size: 13px;">Added refresh token support with /auth/refresh endpoint and 7-day expiry.</p>
+              </div>
+              <div class="resume-line">
+                claude --resume 019bb89b-1b0b-7e90
+              </div>
+            </div>
+            <div class="msg-time">10:34 AM</div>
+          </div>
+        </div>
+
+        <div class="tg-input">
+          <input type="text" class="tg-input-field" placeholder="Message">
+          <div class="tg-send">&#10148;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phone 3: Codex Example -->
+    <div class="phone-wrapper">
+      <span class="phone-label">3. Different Engine</span>
+      <div class="phone">
+        <div class="tg-header">
+          <span class="tg-back">&#8249;</span>
+          <div class="tg-avatar">&#127419;</div>
+          <div class="tg-chat-info">
+            <div class="tg-chat-name">takopi</div>
+            <div class="tg-chat-status">online</div>
+          </div>
+          <div class="tg-header-icons">
+            <span>&#128222;</span>
+            <span>&#8942;</span>
+          </div>
+        </div>
+
+        <div class="tg-chat">
+          <div class="date-sep"><span>Today</span></div>
+
+          <div class="msg-row user">
+            <div class="msg-bubble">
+              /codex add a --verbose flag to the CLI
+            </div>
+            <div class="msg-time">
+              10:40 AM <span class="check">&#10003;&#10003;</span>
+            </div>
+          </div>
+
+          <div class="msg-row bot">
+            <div class="bot-badge">&#129302; BOT</div>
+            <div class="final-msg" style="border-left-color: #22c55e;">
+              <div class="final-header">
+                <span class="final-check">&#10003;</span>
+                <span class="final-label">done</span>
+                <span class="final-engine">&#183; codex &#183; 8s &#183; step 2</span>
+              </div>
+              <div class="final-content">
+                <p style="font-size: 13px;">Added --verbose/-v flag to CLI. When enabled, shows detailed logging output.</p>
+              </div>
+              <div class="resume-line">
+                codex resume abc123def456
+              </div>
+            </div>
+            <div class="msg-time">10:40 AM</div>
+          </div>
+
+          <div class="msg-row user">
+            <div class="msg-bubble">
+              explain how the event loop works in this codebase
+            </div>
+            <div class="msg-time">
+              10:45 AM <span class="check">&#10003;&#10003;</span>
+            </div>
+          </div>
+
+          <div class="msg-row bot">
+            <div class="bot-badge">&#129302; BOT</div>
+            <div class="final-msg" style="border-left-color: #22c55e;">
+              <div class="final-header">
+                <span class="final-check">&#10003;</span>
+                <span class="final-label">done</span>
+                <span class="final-engine">&#183; codex &#183; 11s &#183; step 4</span>
+              </div>
+              <div class="final-content">
+                <p style="font-size: 13px;">The event loop in src/core/loop.py uses asyncio to poll for updates. It processes messages via route_update(), dispatches to handlers, and manages task scheduling through ThreadScheduler...</p>
+              </div>
+              <div class="resume-line">
+                codex resume abc123def456
+              </div>
+            </div>
+            <div class="msg-time">10:45 AM</div>
+          </div>
+        </div>
+
+        <div class="tg-input">
+          <input type="text" class="tg-input-field" placeholder="Message">
+          <div class="tg-send">&#10148;</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comparison -->
+  <div class="comparison">
+    <h3>Direct Mode vs Liaison Mode</h3>
+    <table class="comparison-table">
+      <tr>
+        <th>Aspect</th>
+        <th><span class="tag direct">Direct</span></th>
+        <th><span class="tag liaison">Liaison</span></th>
+      </tr>
+      <tr>
+        <td>Command style</td>
+        <td>/claude, /codex, /pi, /opencode</td>
+        <td>/liaison (natural language)</td>
+      </tr>
+      <tr>
+        <td>Execution</td>
+        <td>Single agent runs directly</td>
+        <td>Liaison orchestrates multiple agents</td>
+      </tr>
+      <tr>
+        <td>Progress view</td>
+        <td>Tool calls only</td>
+        <td>Subagent panes with live output</td>
+      </tr>
+      <tr>
+        <td>User interaction</td>
+        <td>Send command, wait for result</td>
+        <td>May receive escalation questions</td>
+      </tr>
+      <tr>
+        <td>Best for</td>
+        <td>Quick, focused tasks</td>
+        <td>Complex multi-step workflows</td>
+      </tr>
+      <tr>
+        <td>Resume token</td>
+        <td>claude --resume xyz</td>
+        <td>liaison --session xyz</td>
+      </tr>
+    </table>
+  </div>
+</body>
+</html>

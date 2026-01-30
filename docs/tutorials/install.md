@@ -68,6 +68,17 @@ npm install -g @mariozechner/pi-coding-agent
 
 Pi can authenticate via a provider login or use API billing. You can log in with Anthropic (Claude subscription), OpenAI (ChatGPT subscription), GitHub Copilot, Google Cloud Code Assist (Gemini CLI), or Antigravity (Gemini 3, Claude, GPT-OSS), or choose API billing instead.
 
+### Liaison
+
+Liaison is a built-in orchestrator engine that doesn't require separate installation. It uses tmux to control other agent CLIs (Claude Code, Codex, etc.) as subagents, interpreting your natural language requests and coordinating multi-step tasks.
+
+Requirements for liaison:
+
+- `tmux` installed on your system
+- At least one other engine (Codex, Claude Code, OpenCode, or Pi) installed
+
+Liaison is useful for complex tasks that benefit from natural language interpretation or multi-agent coordination.
+
 ## 4. Run onboarding
 
 Start Takopi without a config file. It will detect this and launch the setup wizard:

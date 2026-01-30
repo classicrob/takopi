@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Takopi - Unified Telegram Experience</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --tg-bg: #0e1621;
+            --tg-bg-secondary: #17212b;
+            --tg-bg-tertiary: #1c2733;
+            --tg-border: #2b3945;
+            --tg-text: #f5f5f5;
+            --tg-text-secondary: #8b9fad;
+            --tg-text-tertiary: #6b7c8a;
+            --tg-accent: #3390ec;
+            --tg-accent-soft: rgba(51, 144, 236, 0.15);
+            --tg-user-bubble: #2b5278;
+            --tg-bot-bubble: #182533;
+            --tg-success: #4fae4e;
+            --tg-warning: #e5a545;
+            --tg-error: #e55353;
+            --session-glow: rgba(51, 144, 236, 0.08);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--tg-bg);
+            color: var(--tg-text);
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+            margin-bottom: 12px;
+            background: linear-gradient(135deg, var(--tg-text) 0%, var(--tg-accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            color: var(--tg-text-secondary);
+            font-size: 15px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .insight-box {
+            background: var(--tg-accent-soft);
+            border: 1px solid rgba(51, 144, 236, 0.25);
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 40px;
+        }
+
+        .insight-box h3 {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--tg-accent);
+            margin-bottom: 8px;
+        }
+
+        .insight-box p {
+            font-size: 14px;
+            color: var(--tg-text-secondary);
+        }
+
+        /* Phone mockup */
+        .phone-frame {
+            background: var(--tg-bg-secondary);
+            border-radius: 40px;
+            padding: 12px;
+            max-width: 420px;
+            margin: 0 auto 60px;
+            box-shadow:
+                0 0 0 1px var(--tg-border),
+                0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .phone-screen {
+            background: var(--tg-bg);
+            border-radius: 30px;
+            overflow: hidden;
+        }
+
+        /* Chat header */
+        .chat-header {
+            background: var(--tg-bg-secondary);
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            border-bottom: 1px solid var(--tg-border);
+        }
+
+        .chat-header .back {
+            color: var(--tg-accent);
+            font-size: 20px;
+        }
+
+        .chat-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .chat-info {
+            flex: 1;
+        }
+
+        .chat-name {
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        .chat-status {
+            font-size: 13px;
+            color: var(--tg-text-secondary);
+        }
+
+        /* Messages area */
+        .messages {
+            padding: 16px;
+            min-height: 500px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        /* Message bubbles */
+        .message {
+            max-width: 85%;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            align-self: flex-end;
+        }
+
+        .message.bot {
+            align-self: flex-start;
+        }
+
+        .bubble {
+            padding: 10px 14px;
+            border-radius: 18px;
+            font-size: 14px;
+        }
+
+        .message.user .bubble {
+            background: var(--tg-user-bubble);
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.bot .bubble {
+            background: var(--tg-bot-bubble);
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-time {
+            font-size: 11px;
+            color: var(--tg-text-tertiary);
+            margin-top: 4px;
+            text-align: right;
+        }
+
+        .message.bot .message-time {
+            text-align: left;
+        }
+
+        /* Session Card - The unified component */
+        .session-card {
+            background: var(--tg-bg-tertiary);
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid var(--tg-border);
+            max-width: 100%;
+        }
+
+        .session-header {
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .session-header:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .session-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .session-icon.working {
+            background: var(--tg-accent-soft);
+            color: var(--tg-accent);
+            animation: pulse 2s infinite;
+        }
+
+        .session-icon.complete {
+            background: rgba(79, 174, 78, 0.15);
+            color: var(--tg-success);
+        }
+
+        .session-icon.paused {
+            background: rgba(229, 165, 69, 0.15);
+            color: var(--tg-warning);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .session-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .session-title {
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .session-status {
+            font-size: 12px;
+            color: var(--tg-text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--tg-accent);
+            animation: blink 1.5s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .session-expand {
+            color: var(--tg-text-tertiary);
+            font-size: 12px;
+            transition: transform 0.2s;
+        }
+
+        .session-card.expanded .session-expand {
+            transform: rotate(180deg);
+        }
+
+        /* Session agents strip */
+        .session-agents {
+            padding: 0 16px 12px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .agent-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 500;
+            background: var(--tg-bg-secondary);
+            border: 1px solid var(--tg-border);
+        }
+
+        .agent-badge .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        .agent-badge.active .dot {
+            background: var(--tg-success);
+        }
+
+        .agent-badge.idle .dot {
+            background: var(--tg-text-tertiary);
+        }
+
+        /* Session activity feed */
+        .session-activity {
+            border-top: 1px solid var(--tg-border);
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .session-card.expanded .session-activity {
+            max-height: 300px;
+        }
+
+        .activity-item {
+            padding: 10px 16px;
+            font-size: 12px;
+            border-bottom: 1px solid rgba(43, 57, 69, 0.5);
+            display: flex;
+            gap: 10px;
+        }
+
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+
+        .activity-time {
+            color: var(--tg-text-tertiary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            flex-shrink: 0;
+        }
+
+        .activity-content {
+            color: var(--tg-text-secondary);
+            flex: 1;
+        }
+
+        .activity-content code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--tg-bg);
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .activity-agent {
+            color: var(--tg-accent);
+            font-weight: 500;
+        }
+
+        /* Session controls */
+        .session-controls {
+            padding: 12px 16px;
+            border-top: 1px solid var(--tg-border);
+            display: flex;
+            gap: 8px;
+        }
+
+        .control-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .control-btn.primary {
+            background: var(--tg-accent);
+            color: white;
+        }
+
+        .control-btn.secondary {
+            background: var(--tg-bg-secondary);
+            color: var(--tg-text-secondary);
+            border: 1px solid var(--tg-border);
+        }
+
+        .control-btn:hover {
+            filter: brightness(1.1);
+        }
+
+        /* Input prompt - unified question UI */
+        .input-prompt {
+            background: var(--tg-bg-tertiary);
+            border-radius: 16px;
+            border: 1px solid var(--tg-border);
+            overflow: hidden;
+        }
+
+        .prompt-header {
+            padding: 12px 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .prompt-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: rgba(229, 165, 69, 0.15);
+            color: var(--tg-warning);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .prompt-content {
+            flex: 1;
+        }
+
+        .prompt-source {
+            font-size: 11px;
+            color: var(--tg-text-tertiary);
+            margin-bottom: 4px;
+        }
+
+        .prompt-question {
+            font-size: 14px;
+            color: var(--tg-text);
+        }
+
+        .prompt-actions {
+            padding: 12px 16px;
+            padding-top: 0;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .prompt-btn {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .prompt-btn.approve {
+            background: var(--tg-accent);
+            color: white;
+        }
+
+        .prompt-btn.deny {
+            background: var(--tg-bg-secondary);
+            color: var(--tg-text-secondary);
+            border: 1px solid var(--tg-border);
+        }
+
+        .prompt-btn.custom {
+            background: transparent;
+            color: var(--tg-accent);
+            border: 1px solid var(--tg-accent);
+        }
+
+        /* Comparison section */
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-top: 60px;
+        }
+
+        @media (max-width: 700px) {
+            .comparison {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .comparison-card {
+            background: var(--tg-bg-secondary);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid var(--tg-border);
+        }
+
+        .comparison-card h3 {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .comparison-card.old h3 {
+            color: var(--tg-text-tertiary);
+        }
+
+        .comparison-card.new h3 {
+            color: var(--tg-accent);
+        }
+
+        .comparison-card p {
+            font-size: 13px;
+            color: var(--tg-text-secondary);
+            margin-bottom: 16px;
+        }
+
+        .feature-list {
+            list-style: none;
+        }
+
+        .feature-list li {
+            font-size: 13px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--tg-border);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .feature-list li:last-child {
+            border-bottom: none;
+        }
+
+        .feature-list .icon {
+            width: 20px;
+            text-align: center;
+        }
+
+        .comparison-card.old .feature-list .icon {
+            color: var(--tg-text-tertiary);
+        }
+
+        .comparison-card.new .feature-list .icon {
+            color: var(--tg-success);
+        }
+
+        /* Principles section */
+        .principles {
+            margin-top: 60px;
+        }
+
+        .principles h2 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        .principle-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+
+        @media (max-width: 700px) {
+            .principle-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .principle {
+            background: var(--tg-bg-secondary);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--tg-border);
+        }
+
+        .principle-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: var(--tg-accent-soft);
+            color: var(--tg-accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            margin-bottom: 12px;
+        }
+
+        .principle h4 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .principle p {
+            font-size: 12px;
+            color: var(--tg-text-secondary);
+        }
+
+        /* Date label */
+        .date-label {
+            text-align: center;
+            margin: 16px 0;
+        }
+
+        .date-label span {
+            background: var(--tg-bg-secondary);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            color: var(--tg-text-tertiary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Unified Takopi Experience</h1>
+            <p>One conversation. One assistant. Complexity handled transparently.</p>
+        </header>
+
+        <div class="insight-box">
+            <h3>Core Insight</h3>
+            <p>Whether your request needs 1 agent or 5, the experience should be identical. You see a <strong>session</strong> with status, activity, and prompts. The only difference is in the details you choose to expand.</p>
+        </div>
+
+        <!-- Phone mockup -->
+        <div class="phone-frame">
+            <div class="phone-screen">
+                <div class="chat-header">
+                    <span class="back">&#8249;</span>
+                    <div class="chat-avatar">&#129430;</div>
+                    <div class="chat-info">
+                        <div class="chat-name">Takopi</div>
+                        <div class="chat-status">online</div>
+                    </div>
+                </div>
+
+                <div class="messages">
+                    <div class="date-label">
+                        <span>Today</span>
+                    </div>
+
+                    <!-- User message - natural language, no slash command -->
+                    <div class="message user" style="animation-delay: 0.1s">
+                        <div class="bubble">
+                            Add dark mode to the settings page and make sure tests pass
+                        </div>
+                        <div class="message-time">2:34 PM</div>
+                    </div>
+
+                    <!-- Session card - unified component -->
+                    <div class="message bot" style="animation-delay: 0.2s">
+                        <div class="session-card expanded">
+                            <div class="session-header">
+                                <div class="session-icon working">&#9881;</div>
+                                <div class="session-info">
+                                    <div class="session-title">Adding dark mode to settings</div>
+                                    <div class="session-status">
+                                        <span class="status-dot"></span>
+                                        Working...
+                                    </div>
+                                </div>
+                                <div class="session-expand">&#9660;</div>
+                            </div>
+
+                            <!-- Agents strip - shows what's active -->
+                            <div class="session-agents">
+                                <span class="agent-badge active">
+                                    <span class="dot"></span>
+                                    Claude Code
+                                </span>
+                                <span class="agent-badge idle">
+                                    <span class="dot"></span>
+                                    Tests
+                                </span>
+                            </div>
+
+                            <!-- Activity feed - collapsed by default, expandable -->
+                            <div class="session-activity">
+                                <div class="activity-item">
+                                    <span class="activity-time">2:34</span>
+                                    <span class="activity-content">
+                                        <span class="activity-agent">Claude</span> reading <code>settings.tsx</code>
+                                    </span>
+                                </div>
+                                <div class="activity-item">
+                                    <span class="activity-time">2:34</span>
+                                    <span class="activity-content">
+                                        <span class="activity-agent">Claude</span> found theme context at <code>src/context/theme.ts</code>
+                                    </span>
+                                </div>
+                                <div class="activity-item">
+                                    <span class="activity-time">2:35</span>
+                                    <span class="activity-content">
+                                        <span class="activity-agent">Claude</span> editing <code>settings.tsx</code> - adding toggle component
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="session-controls">
+                                <button class="control-btn secondary">&#10074;&#10074; Pause</button>
+                                <button class="control-btn secondary">&#128065; Watch</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Input prompt - question from agent -->
+                    <div class="message bot" style="animation-delay: 0.3s; margin-top: 8px;">
+                        <div class="input-prompt">
+                            <div class="prompt-header">
+                                <div class="prompt-icon">?</div>
+                                <div class="prompt-content">
+                                    <div class="prompt-source">From Claude Code</div>
+                                    <div class="prompt-question">
+                                        Found an existing DarkModeToggle component. Should I use it or create a new one for the settings page?
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="prompt-actions">
+                                <button class="prompt-btn approve">Use existing</button>
+                                <button class="prompt-btn deny">Create new</button>
+                                <button class="prompt-btn custom">Reply...</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- User reply -->
+                    <div class="message user" style="animation-delay: 0.4s">
+                        <div class="bubble">
+                            Use existing, but add a label
+                        </div>
+                        <div class="message-time">2:36 PM</div>
+                    </div>
+
+                    <!-- Completion card -->
+                    <div class="message bot" style="animation-delay: 0.5s">
+                        <div class="session-card">
+                            <div class="session-header">
+                                <div class="session-icon complete">&#10003;</div>
+                                <div class="session-info">
+                                    <div class="session-title">Dark mode added to settings</div>
+                                    <div class="session-status" style="color: var(--tg-success);">
+                                        Complete &middot; 3 files changed &middot; Tests passing
+                                    </div>
+                                </div>
+                                <div class="session-expand">&#9660;</div>
+                            </div>
+
+                            <div class="session-controls">
+                                <button class="control-btn primary">&#8617; Continue this session</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Comparison -->
+        <div class="comparison">
+            <div class="comparison-card old">
+                <h3>&#128683; Before: Two Paradigms</h3>
+                <p>Users had to think about modes and commands</p>
+                <ul class="feature-list">
+                    <li><span class="icon">&#8594;</span> <code>/claude</code> for simple tasks</li>
+                    <li><span class="icon">&#8594;</span> <code>/liaison</code> for complex orchestration</li>
+                    <li><span class="icon">&#8594;</span> Different UIs for different modes</li>
+                    <li><span class="icon">&#8594;</span> Reply to continue vs. button callbacks</li>
+                    <li><span class="icon">&#8594;</span> Separate mental models</li>
+                </ul>
+            </div>
+
+            <div class="comparison-card new">
+                <h3>&#10024; After: One Experience</h3>
+                <p>The system adapts; users just talk</p>
+                <ul class="feature-list">
+                    <li><span class="icon">&#10003;</span> Natural language, no commands needed</li>
+                    <li><span class="icon">&#10003;</span> Session cards scale from 1 to N agents</li>
+                    <li><span class="icon">&#10003;</span> Same UI whether simple or complex</li>
+                    <li><span class="icon">&#10003;</span> Consistent reply &amp; button interactions</li>
+                    <li><span class="icon">&#10003;</span> One mental model: "I'm talking to Takopi"</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Design principles -->
+        <div class="principles">
+            <h2>Unified Design Principles</h2>
+            <div class="principle-grid">
+                <div class="principle">
+                    <div class="principle-icon">&#127919;</div>
+                    <h4>Progressive Disclosure</h4>
+                    <p>Simple tasks look simple. Expand to see complexity only when you want it.</p>
+                </div>
+                <div class="principle">
+                    <div class="principle-icon">&#128176;</div>
+                    <h4>Consistent Controls</h4>
+                    <p>Pause, resume, watch, continue - same buttons everywhere, same behavior.</p>
+                </div>
+                <div class="principle">
+                    <div class="principle-icon">&#128172;</div>
+                    <h4>Conversational First</h4>
+                    <p>Reply to any message naturally. The system figures out the routing.</p>
+                </div>
+                <div class="principle">
+                    <div class="principle-icon">&#128064;</div>
+                    <h4>Transparent Orchestration</h4>
+                    <p>See which agents are active, but don't manage them. Trust the liaison.</p>
+                </div>
+                <div class="principle">
+                    <div class="principle-icon">&#9889;</div>
+                    <h4>Smart Escalation</h4>
+                    <p>Only interrupted for decisions that matter. Routine stuff is handled.</p>
+                </div>
+                <div class="principle">
+                    <div class="principle-icon">&#128260;</div>
+                    <h4>Seamless Continuity</h4>
+                    <p>Every session is resumable. Pick up where you left off, anytime.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Implementation notes -->
+        <div class="insight-box" style="margin-top: 60px;">
+            <h3>Implementation Notes</h3>
+            <p>
+                <strong>Session detection:</strong> Takopi analyzes the request and decides whether to use direct engine (simple) or liaison (complex). The user never chooses.<br><br>
+                <strong>Unified routing:</strong> All replies flow through the same handler. If there's an active session, it continues. If there's a pending question, it answers it. Otherwise, it starts fresh.<br><br>
+                <strong>Agent badges:</strong> The session card shows active agents dynamically. A single-agent task shows one badge. Multi-agent shows multiple. Same component, same UI.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Add interactivity for the demo
+        document.querySelectorAll('.session-card').forEach(card => {
+            card.querySelector('.session-header').addEventListener('click', () => {
+                card.classList.toggle('expanded');
+            });
+        });
+    </script>
+</body>
+</html>

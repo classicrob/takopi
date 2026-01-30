@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Takopi Architecture Explorer</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+  height: 100vh;
+  overflow: hidden;
+}
+.container {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  grid-template-rows: 1fr auto;
+  height: 100vh;
+}
+.sidebar {
+  background: #1e293b;
+  padding: 16px;
+  overflow-y: auto;
+  border-right: 1px solid #334155;
+}
+.sidebar h2 {
+  font-size: 14px;
+  color: #94a3b8;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.section { margin-bottom: 24px; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.preset-btn {
+  background: #334155;
+  border: 1px solid #475569;
+  color: #e2e8f0;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.preset-btn:hover { background: #475569; }
+.preset-btn.active { background: #3b82f6; border-color: #3b82f6; }
+.layer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.layer-toggle input { display: none; }
+.layer-box {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 2px solid #475569;
+  transition: all 0.15s;
+}
+.layer-toggle input:checked + .layer-box { border-color: transparent; }
+.layer-toggle span { font-size: 13px; }
+.conn-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.conn-toggle input { display: none; }
+.conn-line {
+  width: 20px;
+  height: 3px;
+  border-radius: 2px;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+.conn-toggle input:checked + .conn-line { opacity: 1; }
+.conn-toggle span { font-size: 13px; }
+.comments-section { margin-top: 16px; }
+.comment-item {
+  background: #334155;
+  padding: 10px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+.comment-target { color: #60a5fa; font-weight: 500; }
+.comment-file { color: #64748b; font-size: 10px; }
+.comment-text { color: #cbd5e1; line-height: 1.4; }
+.delete-btn {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+}
+.delete-btn:hover { color: #ef4444; }
+.canvas-area {
+  position: relative;
+  overflow: hidden;
+  background: #0f172a;
+}
+#diagram {
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+#diagram:active { cursor: grabbing; }
+.zoom-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  gap: 4px;
+}
+.zoom-btn {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+}
+.zoom-btn:hover { background: #334155; }
+.legend {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 11px;
+}
+.legend-title { color: #94a3b8; margin-bottom: 8px; }
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.legend-line {
+  width: 24px;
+  height: 3px;
+  border-radius: 2px;
+}
+.prompt-area {
+  grid-column: 1 / -1;
+  background: #1e293b;
+  border-top: 1px solid #334155;
+  padding: 16px;
+}
+.prompt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.prompt-header h3 { font-size: 12px; color: #94a3b8; }
+.copy-btn {
+  background: #3b82f6;
+  border: none;
+  color: white;
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.copy-btn:hover { background: #2563eb; }
+.copy-btn.copied { background: #10b981; }
+#prompt-output {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.5;
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 20px;
+  width: 400px;
+  max-width: 90%;
+}
+.modal h3 { margin-bottom: 4px; color: #f1f5f9; }
+.modal-file { color: #64748b; font-size: 12px; margin-bottom: 16px; }
+.modal textarea {
+  width: 100%;
+  height: 100px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  color: #e2e8f0;
+  padding: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+.modal textarea:focus { outline: none; border-color: #3b82f6; }
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.modal-btn {
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  border: none;
+}
+.modal-cancel { background: #334155; color: #e2e8f0; }
+.modal-save { background: #3b82f6; color: white; }
+.modal-cancel:hover { background: #475569; }
+.modal-save:hover { background: #2563eb; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="sidebar">
+    <div class="section">
+      <h2>View Presets</h2>
+      <div class="presets">
+        <button class="preset-btn active" onclick="setPreset('full')">Full System</button>
+        <button class="preset-btn" onclick="setPreset('message')">Message Flow</button>
+        <button class="preset-btn" onclick="setPreset('agents')">Agent System</button>
+        <button class="preset-btn" onclick="setPreset('telegram')">Telegram</button>
+      </div>
+    </div>
+    <div class="section">
+      <h2>Layers</h2>
+      <label class="layer-toggle">
+        <input type="checkbox" checked onchange="toggleLayer('cli', this.checked)">
+        <span class="layer-box" style="background: #dbeafe"></span>
+        <span>CLI</span>
+      </label>
+      <label class="layer-toggle">
+        <input type="checkbox" checked onchange="toggleLayer('plugin', this.checked)">
+        <span class="layer-box" style="background: #fef3c7"></span>
+        <span>Plugin</span>
+      </label>
+      <label class="layer-toggle">
+        <input type="checkbox" checked onchange="toggleLayer('orchestration', this.checked)">
+        <span class="layer-box" style="background: #f3e8ff"></span>
+        <span>Orchestration</span>
+      </label>
+      <label class="layer-toggle">
+        <input type="checkbox" checked onchange="toggleLayer('bridge', this.checked)">
+        <span class="layer-box" style="background: #dcfce7"></span>
+        <span>Bridge</span>
+      </label>
+      <label class="layer-toggle">
+        <input type="checkbox" checked onchange="toggleLayer('runner', this.checked)">
+        <span class="layer-box" style="background: #fce7f3"></span>
+        <span>Runner</span>
+      </label>
+      <label class="layer-toggle">
+        <input type="checkbox" checked onchange="toggleLayer('liaison', this.checked)">
+        <span class="layer-box" style="background: #fed7aa"></span>
+        <span>Liaison</span>
+      </label>
+      <label class="layer-toggle">
+        <input type="checkbox" checked onchange="toggleLayer('transport', this.checked)">
+        <span class="layer-box" style="background: #a5f3fc"></span>
+        <span>Transport</span>
+      </label>
+    </div>
+    <div class="section">
+      <h2>Connections</h2>
+      <label class="conn-toggle">
+        <input type="checkbox" checked onchange="toggleConn('data', this.checked)">
+        <span class="conn-line" style="background: #3b82f6"></span>
+        <span>Data Flow</span>
+      </label>
+      <label class="conn-toggle">
+        <input type="checkbox" checked onchange="toggleConn('call', this.checked)">
+        <span class="conn-line" style="background: #10b981"></span>
+        <span>Function Calls</span>
+      </label>
+      <label class="conn-toggle">
+        <input type="checkbox" checked onchange="toggleConn('event', this.checked)">
+        <span class="conn-line" style="background: #f97316"></span>
+        <span>Events</span>
+      </label>
+    </div>
+    <div class="section comments-section">
+      <h2>Comments (<span id="comment-count">0</span>)</h2>
+      <div id="comments-list"></div>
+      <p style="color: #64748b; font-size: 11px; margin-top: 8px;">Click a node to add comments</p>
+    </div>
+  </div>
+
+  <div class="canvas-area">
+    <svg id="diagram" viewBox="0 0 900 650"></svg>
+    <div class="zoom-controls">
+      <button class="zoom-btn" onclick="zoom(1.2)">+</button>
+      <button class="zoom-btn" onclick="zoom(0.8)">−</button>
+      <button class="zoom-btn" onclick="resetZoom()">⌂</button>
+    </div>
+    <div class="legend">
+      <div class="legend-title">Connection Types</div>
+      <div class="legend-item"><span class="legend-line" style="background: #3b82f6"></span> Data Flow</div>
+      <div class="legend-item"><span class="legend-line" style="background: #10b981"></span> Function Calls</div>
+      <div class="legend-item"><span class="legend-line" style="background: #f97316"></span> Events</div>
+    </div>
+  </div>
+
+  <div class="prompt-area">
+    <div class="prompt-header">
+      <h3>GENERATED PROMPT</h3>
+      <button class="copy-btn" onclick="copyPrompt()">Copy Prompt</button>
+    </div>
+    <div id="prompt-output">Click components in the diagram to add comments and generate a prompt for Claude.</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3 id="modal-title">Component Name</h3>
+    <div class="modal-file" id="modal-file">path/to/file.py</div>
+    <textarea id="modal-input" placeholder="What would you like to change or ask about this component?"></textarea>
+    <div class="modal-actions">
+      <button class="modal-btn modal-cancel" onclick="closeModal()">Cancel</button>
+      <button class="modal-btn modal-save" onclick="saveComment()">Add Comment</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const state = {
+  layers: { cli: true, plugin: true, orchestration: true, bridge: true, runner: true, liaison: true, transport: true },
+  connections: { data: true, call: true, event: true },
+  comments: [],
+  zoom: 1,
+  pan: { x: 0, y: 0 },
+  currentNode: null
+};
+
+const LAYER_COLORS = {
+  cli: '#dbeafe',
+  plugin: '#fef3c7',
+  orchestration: '#f3e8ff',
+  bridge: '#dcfce7',
+  runner: '#fce7f3',
+  liaison: '#fed7aa',
+  transport: '#a5f3fc'
+};
+
+const nodes = [
+  // CLI Layer
+  { id: 'cli', label: 'CLI', subtitle: 'cli.py', x: 420, y: 30, w: 120, h: 40, layer: 'cli' },
+
+  // Plugin Layer
+  { id: 'plugins', label: 'Plugins', subtitle: 'plugins.py', x: 80, y: 100, w: 120, h: 40, layer: 'plugin' },
+  { id: 'engines', label: 'Engines', subtitle: 'engines.py', x: 230, y: 100, w: 120, h: 40, layer: 'plugin' },
+  { id: 'transports', label: 'Transports', subtitle: 'transports.py', x: 530, y: 100, w: 120, h: 40, layer: 'plugin' },
+  { id: 'commands', label: 'Commands', subtitle: 'commands.py', x: 680, y: 100, w: 120, h: 40, layer: 'plugin' },
+
+  // Orchestration Layer
+  { id: 'router', label: 'Router', subtitle: 'router.py', x: 180, y: 180, w: 120, h: 40, layer: 'orchestration' },
+  { id: 'scheduler', label: 'Scheduler', subtitle: 'scheduler.py', x: 420, y: 180, w: 120, h: 40, layer: 'orchestration' },
+  { id: 'transport-runtime', label: 'Transport Runtime', subtitle: 'transport_runtime.py', x: 620, y: 180, w: 140, h: 40, layer: 'orchestration' },
+
+  // Bridge Layer
+  { id: 'telegram-bridge', label: 'Telegram Bridge', subtitle: 'telegram/bridge.py', x: 520, y: 270, w: 140, h: 40, layer: 'bridge' },
+  { id: 'runner-bridge', label: 'Runner Bridge', subtitle: 'runner_bridge.py', x: 280, y: 270, w: 130, h: 40, layer: 'bridge' },
+
+  // Runner Layer
+  { id: 'runner', label: 'Runner Protocol', subtitle: 'runner.py', x: 120, y: 360, w: 130, h: 40, layer: 'runner' },
+  { id: 'claude-runner', label: 'Claude', subtitle: 'runners/claude.py', x: 80, y: 430, w: 100, h: 40, layer: 'runner' },
+  { id: 'codex-runner', label: 'Codex', subtitle: 'runners/codex.py', x: 200, y: 430, w: 100, h: 40, layer: 'runner' },
+  { id: 'opencode-runner', label: 'OpenCode', subtitle: 'runners/opencode.py', x: 320, y: 430, w: 100, h: 40, layer: 'runner' },
+  { id: 'pi-runner', label: 'Pi', subtitle: 'runners/pi.py', x: 440, y: 430, w: 80, h: 40, layer: 'runner' },
+
+  // Liaison Layer
+  { id: 'liaison', label: 'Liaison', subtitle: 'runners/liaison.py', x: 580, y: 360, w: 110, h: 40, layer: 'liaison' },
+  { id: 'escalation', label: 'Escalation', subtitle: 'runners/escalation.py', x: 580, y: 430, w: 110, h: 40, layer: 'liaison' },
+  { id: 'coordination', label: 'Coordination', subtitle: 'runners/liaison_coordination.py', x: 710, y: 430, w: 120, h: 40, layer: 'liaison' },
+
+  // Transport Layer
+  { id: 'transport', label: 'Transport', subtitle: 'transport.py', x: 620, y: 520, w: 110, h: 40, layer: 'transport' },
+  { id: 'presenter', label: 'Presenter', subtitle: 'presenter.py', x: 750, y: 520, w: 110, h: 40, layer: 'transport' },
+  { id: 'telegram-client', label: 'Telegram Client', subtitle: 'telegram/client.py', x: 480, y: 580, w: 130, h: 40, layer: 'transport' },
+  { id: 'progress', label: 'Progress', subtitle: 'progress.py', x: 680, y: 580, w: 110, h: 40, layer: 'transport' }
+];
+
+const connections = [
+  // CLI to Plugin Layer
+  { from: 'cli', to: 'plugins', type: 'call' },
+  { from: 'cli', to: 'engines', type: 'call' },
+  { from: 'cli', to: 'transports', type: 'call' },
+
+  // Plugin to Orchestration
+  { from: 'engines', to: 'router', type: 'data' },
+  { from: 'transports', to: 'transport-runtime', type: 'data' },
+  { from: 'commands', to: 'transport-runtime', type: 'call' },
+
+  // Orchestration internal
+  { from: 'router', to: 'scheduler', type: 'data' },
+  { from: 'scheduler', to: 'runner-bridge', type: 'call' },
+  { from: 'transport-runtime', to: 'telegram-bridge', type: 'call' },
+
+  // Bridge to Runner
+  { from: 'runner-bridge', to: 'runner', type: 'call' },
+  { from: 'telegram-bridge', to: 'scheduler', type: 'data' },
+
+  // Runner to concrete runners
+  { from: 'runner', to: 'claude-runner', type: 'call' },
+  { from: 'runner', to: 'codex-runner', type: 'call' },
+  { from: 'runner', to: 'opencode-runner', type: 'call' },
+  { from: 'runner', to: 'pi-runner', type: 'call' },
+
+  // Runner to Liaison
+  { from: 'runner', to: 'liaison', type: 'call' },
+  { from: 'liaison', to: 'escalation', type: 'call' },
+  { from: 'liaison', to: 'coordination', type: 'call' },
+
+  // Runners emit events to runner-bridge
+  { from: 'claude-runner', to: 'runner-bridge', type: 'event' },
+  { from: 'liaison', to: 'runner-bridge', type: 'event' },
+
+  // Bridge to Transport
+  { from: 'runner-bridge', to: 'progress', type: 'event' },
+  { from: 'telegram-bridge', to: 'telegram-client', type: 'call' },
+
+  // Transport internal
+  { from: 'progress', to: 'presenter', type: 'data' },
+  { from: 'presenter', to: 'transport', type: 'call' },
+  { from: 'transport', to: 'telegram-client', type: 'call' }
+];
+
+const CONN_COLORS = { data: '#3b82f6', call: '#10b981', event: '#f97316' };
+const CONN_DASH = { data: '', call: '6,3', event: '4,4' };
+
+function render() {
+  const svg = document.getElementById('diagram');
+  svg.innerHTML = `
+    <defs>
+      <marker id="arrow-data" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="${CONN_COLORS.data}"/>
+      </marker>
+      <marker id="arrow-call" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="${CONN_COLORS.call}"/>
+      </marker>
+      <marker id="arrow-event" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="${CONN_COLORS.event}"/>
+      </marker>
+    </defs>
+    <g id="content" transform="translate(${state.pan.x}, ${state.pan.y}) scale(${state.zoom})">
+      <g id="connections"></g>
+      <g id="nodes"></g>
+    </g>
+  `;
+
+  const connGroup = document.getElementById('connections');
+  const nodeGroup = document.getElementById('nodes');
+
+  // Draw connections
+  connections.forEach(c => {
+    if (!state.connections[c.type]) return;
+    const fromNode = nodes.find(n => n.id === c.from);
+    const toNode = nodes.find(n => n.id === c.to);
+    if (!fromNode || !toNode) return;
+    if (!state.layers[fromNode.layer] || !state.layers[toNode.layer]) return;
+
+    const x1 = fromNode.x + fromNode.w / 2;
+    const y1 = fromNode.y + fromNode.h;
+    const x2 = toNode.x + toNode.w / 2;
+    const y2 = toNode.y;
+
+    const midY = (y1 + y2) / 2;
+    const path = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+
+    const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    pathEl.setAttribute('d', path);
+    pathEl.setAttribute('fill', 'none');
+    pathEl.setAttribute('stroke', CONN_COLORS[c.type]);
+    pathEl.setAttribute('stroke-width', '2');
+    pathEl.setAttribute('stroke-dasharray', CONN_DASH[c.type]);
+    pathEl.setAttribute('marker-end', `url(#arrow-${c.type})`);
+    pathEl.setAttribute('opacity', '0.7');
+    connGroup.appendChild(pathEl);
+  });
+
+  // Draw nodes
+  nodes.forEach(n => {
+    if (!state.layers[n.layer]) return;
+
+    const hasComment = state.comments.some(c => c.target === n.id);
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('cursor', 'pointer');
+    g.onclick = () => openModal(n);
+
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', n.x);
+    rect.setAttribute('y', n.y);
+    rect.setAttribute('width', n.w);
+    rect.setAttribute('height', n.h);
+    rect.setAttribute('rx', '6');
+    rect.setAttribute('fill', LAYER_COLORS[n.layer]);
+    rect.setAttribute('stroke', hasComment ? '#f97316' : '#475569');
+    rect.setAttribute('stroke-width', hasComment ? '3' : '1');
+
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    title.setAttribute('x', n.x + n.w / 2);
+    title.setAttribute('y', n.y + 16);
+    title.setAttribute('text-anchor', 'middle');
+    title.setAttribute('fill', '#1e293b');
+    title.setAttribute('font-size', '12');
+    title.setAttribute('font-weight', '600');
+    title.textContent = n.label;
+
+    const sub = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    sub.setAttribute('x', n.x + n.w / 2);
+    sub.setAttribute('y', n.y + 30);
+    sub.setAttribute('text-anchor', 'middle');
+    sub.setAttribute('fill', '#64748b');
+    sub.setAttribute('font-size', '9');
+    sub.textContent = n.subtitle;
+
+    g.appendChild(rect);
+    g.appendChild(title);
+    g.appendChild(sub);
+    nodeGroup.appendChild(g);
+  });
+
+  updatePrompt();
+  renderComments();
+}
+
+function toggleLayer(layer, enabled) {
+  state.layers[layer] = enabled;
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  render();
+}
+
+function toggleConn(type, enabled) {
+  state.connections[type] = enabled;
+  render();
+}
+
+function setPreset(preset) {
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+
+  const all = { cli: true, plugin: true, orchestration: true, bridge: true, runner: true, liaison: true, transport: true };
+  const presets = {
+    full: all,
+    message: { cli: true, plugin: false, orchestration: true, bridge: true, runner: false, liaison: false, transport: true },
+    agents: { cli: false, plugin: false, orchestration: false, bridge: true, runner: true, liaison: true, transport: false },
+    telegram: { cli: false, plugin: false, orchestration: false, bridge: true, runner: false, liaison: false, transport: true }
+  };
+
+  state.layers = { ...presets[preset] };
+  document.querySelectorAll('.layer-toggle input').forEach(input => {
+    const layer = input.getAttribute('onchange').match(/toggleLayer\('(\w+)'/)[1];
+    input.checked = state.layers[layer];
+  });
+  render();
+}
+
+function zoom(factor) {
+  state.zoom = Math.max(0.5, Math.min(2, state.zoom * factor));
+  render();
+}
+
+function resetZoom() {
+  state.zoom = 1;
+  state.pan = { x: 0, y: 0 };
+  render();
+}
+
+function openModal(node) {
+  state.currentNode = node;
+  document.getElementById('modal-title').textContent = node.label;
+  document.getElementById('modal-file').textContent = 'src/takopi/' + node.subtitle;
+  document.getElementById('modal-input').value = '';
+  document.getElementById('modal').classList.add('active');
+  document.getElementById('modal-input').focus();
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('active');
+  state.currentNode = null;
+}
+
+function saveComment() {
+  const text = document.getElementById('modal-input').value.trim();
+  if (!text || !state.currentNode) return;
+
+  state.comments.push({
+    id: Date.now(),
+    target: state.currentNode.id,
+    targetLabel: state.currentNode.label,
+    targetFile: 'src/takopi/' + state.currentNode.subtitle,
+    text: text
+  });
+
+  closeModal();
+  render();
+}
+
+function deleteComment(id) {
+  state.comments = state.comments.filter(c => c.id !== id);
+  render();
+}
+
+function renderComments() {
+  const list = document.getElementById('comments-list');
+  document.getElementById('comment-count').textContent = state.comments.length;
+
+  if (state.comments.length === 0) {
+    list.innerHTML = '';
+    return;
+  }
+
+  list.innerHTML = state.comments.map(c => `
+    <div class="comment-item">
+      <div class="comment-header">
+        <div>
+          <div class="comment-target">${c.targetLabel}</div>
+          <div class="comment-file">${c.targetFile}</div>
+        </div>
+        <button class="delete-btn" onclick="deleteComment(${c.id})">×</button>
+      </div>
+      <div class="comment-text">${c.text}</div>
+    </div>
+  `).join('');
+}
+
+function updatePrompt() {
+  const output = document.getElementById('prompt-output');
+
+  if (state.comments.length === 0) {
+    output.textContent = 'Click components in the diagram to add comments and generate a prompt for Claude.';
+    return;
+  }
+
+  const visibleLayers = Object.entries(state.layers)
+    .filter(([_, v]) => v)
+    .map(([k]) => k);
+
+  let prompt = `This is the Takopi codebase architecture`;
+  if (visibleLayers.length < 7) {
+    prompt += `, focusing on the ${visibleLayers.join(', ')} layer${visibleLayers.length > 1 ? 's' : ''}`;
+  }
+  prompt += '.\n\nFeedback on specific components:\n';
+
+  state.comments.forEach(c => {
+    prompt += `\n**${c.targetLabel}** (${c.targetFile}):\n${c.text}\n`;
+  });
+
+  output.textContent = prompt;
+}
+
+function copyPrompt() {
+  const text = document.getElementById('prompt-output').textContent;
+  navigator.clipboard.writeText(text);
+  const btn = document.querySelector('.copy-btn');
+  btn.textContent = 'Copied!';
+  btn.classList.add('copied');
+  setTimeout(() => {
+    btn.textContent = 'Copy Prompt';
+    btn.classList.remove('copied');
+  }, 1500);
+}
+
+// Panning
+let isPanning = false;
+let panStart = { x: 0, y: 0 };
+
+document.getElementById('diagram').addEventListener('mousedown', e => {
+  if (e.target.tagName === 'svg') {
+    isPanning = true;
+    panStart = { x: e.clientX - state.pan.x, y: e.clientY - state.pan.y };
+  }
+});
+
+document.addEventListener('mousemove', e => {
+  if (isPanning) {
+    state.pan.x = e.clientX - panStart.x;
+    state.pan.y = e.clientY - panStart.y;
+    render();
+  }
+});
+
+document.addEventListener('mouseup', () => { isPanning = false; });
+
+// Close modal on Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Enter' && document.getElementById('modal').classList.contains('active')) {
+    saveComment();
+  }
+});
+
+// Initial render
+render();
+</script>
+</body>
+</html>

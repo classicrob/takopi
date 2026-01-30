@@ -11,7 +11,7 @@ from ...commands import CommandExecutor, RunMode, RunRequest, RunResult
 from ...config import ConfigError
 from ...context import RunContext
 from ...logging import bind_run_context, clear_context, get_logger
-from ...model import Action, ActionEvent, EngineId, ResumeToken, TakopiEvent
+from ...model import Action, ActionEvent, EngineId, InputRequestEvent, ResumeToken, TakopiEvent
 from ...progress import ProgressTracker
 from ...router import RunnerUnavailableError
 from ...runner import Runner
@@ -154,6 +154,7 @@ async def _run_engine(
     reply_ref: MessageRef | None = None,
     on_thread_known: Callable[[ResumeToken, anyio.Event], Awaitable[None]]
     | None = None,
+    on_input_request: Callable[[InputRequestEvent], Awaitable[None]] | None = None,
     engine_override: EngineId | None = None,
     thread_id: int | None = None,
     show_resume_line: bool = True,
@@ -232,6 +233,7 @@ async def _run_engine(
                     strip_resume_line=runtime.is_resume_line,
                     running_tasks=running_tasks,
                     on_thread_known=on_thread_known,
+                    on_input_request=on_input_request,
                     progress_ref=progress_ref,
                 )
         finally:
