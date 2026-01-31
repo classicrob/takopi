@@ -1,5 +1,22 @@
 # changelog
 
+## v0.22.1 (unreleased)
+
+### features
+
+- implement captain's chair pattern for liaison runner
+  - liaison now stays alive indefinitely (persistent orchestrator)
+  - new messages route directly to liaison inbox for parallel dispatch
+  - shows "dispatching" instead of "queued" for inbox-routed messages
+  - only `/new` or `/cancel` ends the session (no auto-complete)
+  - 30 minute idle timeout as safety net
+- add persistent memory system for liaison at `~/Dropbox/takopi-memories/`
+
+### docs
+
+- update liaison runner documentation with captain's chair pattern
+- add memories section to liaison docs
+
 ## v0.22.0 (2026-01-28)
 
 ### features

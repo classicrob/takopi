@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import time
+
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
@@ -937,6 +940,58 @@ async def _send_queued_progress(
     )
 
 
+async def _send_dispatching_progress(
+    cfg: TelegramBridgeConfig,
+    *,
+    chat_id: int,
+    user_msg_id: int,
+    thread_id: int | None,
+    resume_token: ResumeToken,
+    context: RunContext | None,
+) -> MessageRef | None:
+    """Send a 'dispatching' progress message for liaison inbox routing."""
+    tracker = ProgressTracker(engine=resume_token.engine)
+    tracker.set_resume(resume_token)
+    context_line = cfg.runtime.format_context_line(context)
+    state = tracker.snapshot(context_line=context_line)
+    message = cfg.exec_cfg.presenter.render_progress(
+        state,
+        elapsed_s=0.0,
+        label="dispatching",
+    )
+    reply_ref = MessageRef(
+        channel_id=chat_id,
+        message_id=user_msg_id,
+        thread_id=thread_id,
+    )
+    return await cfg.exec_cfg.transport.send(
+        channel_id=chat_id,
+        message=message,
+        options=SendOptions(reply_to=reply_ref, notify=False, thread_id=thread_id),
+    )
+
+
+def _write_liaison_inbox(
+    prompt_text: str,
+    chat_id: int,
+    session_id: str,
+) -> None:
+    """Write a message to the liaison's coordination inbox."""
+    inbox_path = Path.home() / ".takopi" / "liaison" / "coordination" / "inbox"
+    inbox_path.mkdir(parents=True, exist_ok=True)
+    msg_file = inbox_path / f"{int(time.time() * 1000)}_{chat_id}.json"
+    msg_file.write_text(
+        json.dumps(
+            {
+                "chat_id": chat_id,
+                "text": prompt_text,
+                "session_id": session_id,
+                "timestamp": time.time(),
+            }
+        )
+    )
+
+
 async def send_with_resume(
     cfg: TelegramBridgeConfig,
     enqueue: Callable[
@@ -1540,6 +1595,24 @@ async def run_main_loop(
                         engine_override,
                     )
                     return
+
+                # Captain's chair: route liaison messages to inbox for parallel dispatch
+                if resume_token.engine == "liaison":
+                    _write_liaison_inbox(
+                        prompt_text=prompt_text,
+                        chat_id=chat_id,
+                        session_id=resume_token.value,
+                    )
+                    await _send_dispatching_progress(
+                        cfg,
+                        chat_id=chat_id,
+                        user_msg_id=user_msg_id,
+                        thread_id=msg.thread_id,
+                        resume_token=resume_token,
+                        context=context,
+                    )
+                    return
+
                 progress_ref = await _send_queued_progress(
                     cfg,
                     chat_id=chat_id,
@@ -1666,6 +1739,24 @@ async def run_main_loop(
                         engine_override,
                     )
                     return
+
+                # Captain's chair: route liaison messages to inbox for parallel dispatch
+                if resume_token.engine == "liaison":
+                    _write_liaison_inbox(
+                        prompt_text=prompt_text,
+                        chat_id=chat_id,
+                        session_id=resume_token.value,
+                    )
+                    await _send_dispatching_progress(
+                        cfg,
+                        chat_id=chat_id,
+                        user_msg_id=user_msg_id,
+                        thread_id=msg.thread_id,
+                        resume_token=resume_token,
+                        context=context,
+                    )
+                    return
+
                 progress_ref = await _send_queued_progress(
                     cfg,
                     chat_id=chat_id,

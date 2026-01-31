@@ -1,16 +1,42 @@
 # Liaison Runner
 
-The Liaison runner provides natural language interpretation via an intermediate agent layer that orchestrates other CLI agents (Claude Code, Codex) using tmux.
+The Liaison runner is a persistent orchestrator (the "captain's chair") that manages multiple Claude Code subagents in parallel tmux panes.
 
 ## Overview
 
-Unlike other runners that spawn a single subprocess and stream JSONL events, the Liaison runner:
+Unlike other runners that spawn a single subprocess and complete when the task finishes, the Liaison runner:
 
 1. Spawns a tmux session with Claude Code as the "brain"
 2. Creates additional panes for worker subagents
 3. Monitors output via `tmux capture-pane -p`
 4. Sends input via `tmux send-keys`
-5. Emits `input_request` events when user escalation is needed
+5. **Stays alive indefinitely** waiting for new requests
+6. Routes new messages via an inbox for parallel dispatch
+7. Only ends when explicitly closed with `/new` or `/cancel`
+
+## Captain's Chair Pattern
+
+The liaison implements a "captain's chair" pattern:
+
+- **Persistent**: Doesn't auto-complete after tasks finish
+- **Parallel dispatch**: New messages go to an inbox and are dispatched to subagents immediately
+- **Multi-agent**: Can have many Claude Code subagents working simultaneously
+- **User-controlled**: Only `/new` or `/cancel` ends the session
+
+When you send a message while the liaison is working, it shows "dispatching" (not "queued") and routes directly to the liaison brain for parallel handling.
+
+## Usage
+
+```
+/liaison fix the readme typo
+```
+
+While it's working, send more messages:
+```
+also update the changelog
+```
+
+The liaison will spawn additional subagents as needed.
 
 ## Resume Token Format
 
@@ -33,6 +59,42 @@ capture_lines = 50                          # lines to capture per poll
 [liaison.escalation]
 timeout_s = 300  # auto-handle timeout (5 minutes)
 ```
+
+## Memories
+
+The liaison has a persistent memory system at `~/Dropbox/takopi-memories/`.
+
+### Reading memories
+
+Before starting work, the liaison checks for relevant memories:
+```
+ls ~/Dropbox/takopi-memories/
+```
+
+Filenames are descriptive, so it scans the list for anything relevant to the current task.
+
+### Writing memories
+
+After completing tasks, the liaison considers whether to record learnings:
+
+**Write a memory when encountering:**
+- Non-obvious project architecture or conventions
+- Solutions to tricky problems that took multiple attempts
+- User preferences or patterns noticed
+- Important decisions and their rationale
+- Gotchas, edge cases, or things that broke unexpectedly
+
+**Don't write memories for:**
+- Routine tasks that went smoothly
+- Information already in project docs
+- Temporary state or one-off fixes
+
+### File naming
+
+Descriptive kebab-case names for easy `ls` scanning:
+- `takopi-telegram-message-threading.md`
+- `happian-api-auth-flow-quirks.md`
+- `rob-prefers-explicit-error-handling.md`
 
 ## Escalation Policy
 
@@ -57,33 +119,37 @@ The liaison uses an escalation policy to determine when to ask the user vs auto-
 - Building: `build`, `compile`
 - Read operations: `read`, `view`, `show`, `list`, `ls`, `cat`
 
-## Multi-Liaison Coordination
-
-Multiple liaisons can run in parallel and coordinate via shared files:
+## Coordination Folder Structure
 
 ```
 ~/.takopi/liaison/
 ├── sessions/{session_id}.json       # Session resume info
 ├── coordination/
-│   ├── inbox/{liaison_id}/*.json    # Direct messages
+│   ├── inbox/*.json                 # Incoming user messages for dispatch
 │   └── broadcast/*.json             # Broadcast messages
 ├── state/
-│   ├── active_liaisons.json         # Registry of running liaisons
-│   ├── task_registry.json           # Tasks and their owners
 │   └── shared_context.json          # Shared knowledge base
 └── locks/*.lock                     # File locks
 ```
 
-### Message Types
+### Inbox Messages
 
-- `info_share`: Share discovered information with other liaisons
-- `question`: Ask another liaison a question
-- `task_claim`: Claim a task to prevent duplicate work
-- `task_complete`: Mark a task as done
+When a user sends a message to an active liaison session, it's written to `coordination/inbox/` as JSON:
+
+```json
+{
+  "chat_id": 123456789,
+  "text": "also update the changelog",
+  "session_id": "liaison_abc123",
+  "timestamp": 1706745600.0
+}
+```
+
+The liaison brain receives these as `NEW USER REQUEST:` messages and dispatches to subagents.
 
 ## Events
 
-The liaison runner emits standard Takopi events plus two new types:
+The liaison runner emits standard Takopi events plus:
 
 ### `input_request`
 
@@ -117,15 +183,13 @@ InputResponseEvent(
 
 ## Telegram Integration
 
-Input requests are rendered as Telegram messages with inline buttons:
-
+- Progress shows "dispatching" for inbox-routed messages
+- Input requests render as Telegram messages with inline buttons
 - **Answer**: Prompts user to reply with their answer
 - **Let liaison handle**: Allows the liaison to decide autonomously
 
 ## Error Handling
 
-The liaison runner handles errors gracefully:
-
 - **Tmux crash**: Attempts session recovery using saved state
 - **Subagent failure**: Emits warning event, attempts restart with resume token
-- **Timeout**: If no activity for 5 minutes, completes with error
+- **Idle timeout**: If no activity for 30 minutes, completes with error (safety net)

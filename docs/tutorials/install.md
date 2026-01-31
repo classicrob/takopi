@@ -70,14 +70,17 @@ Pi can authenticate via a provider login or use API billing. You can log in with
 
 ### Liaison
 
-Liaison is a built-in orchestrator engine that doesn't require separate installation. It uses tmux to control other agent CLIs (Claude Code, Codex, etc.) as subagents, interpreting your natural language requests and coordinating multi-step tasks.
+Liaison is a built-in orchestrator engine (the "captain's chair") that doesn't require separate installation. It uses tmux to control Claude Code subagents, dispatching tasks in parallel and staying alive indefinitely until you explicitly close it.
 
 Requirements for liaison:
 
 - `tmux` installed on your system
-- At least one other engine (Codex, Claude Code, OpenCode, or Pi) installed
+- At least one other engine (Claude Code, Codex, OpenCode, or Pi) installed
 
-Liaison is useful for complex tasks that benefit from natural language interpretation or multi-agent coordination.
+Liaison is useful for:
+- Complex tasks that benefit from multi-agent coordination
+- Parallel task dispatch (send multiple requests while others are running)
+- Long-running sessions where you want a persistent orchestrator
 
 ## 4. Run onboarding
 

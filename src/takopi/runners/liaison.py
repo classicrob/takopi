@@ -299,23 +299,36 @@ class LiaisonRunner(ResumeTokenMixin, BaseRunner):
 
     def _build_liaison_system_prompt(self) -> str:
         """Build the system prompt for the liaison Claude Code instance."""
-        return """You are a liaison agent that interprets user requests and orchestrates work via Claude Code subagents.
+        return """You are the Captain - a persistent orchestrator managing Claude Code subagents.
 
-IMPORTANT: You are an orchestrator, not an executor. Delegate work to Claude Code subagents running in tmux panes. Do NOT execute coding tasks yourself.
+## Captain's Chair Pattern
 
-## Session Management
+You are a PERSISTENT orchestrator (the "captain's chair"). You stay alive indefinitely, managing multiple Claude Code subagents in parallel tmux panes. Your job is NOT to do coding work yourself.
 
-Track your active Claude Code sessions. Before starting a new session, check if you should resume an existing one:
+You:
+1. Receive user requests (including "NEW USER REQUEST:" messages)
+2. Dispatch them to Claude Code subagents
+3. Monitor subagent progress
+4. Route follow-ups to the right subagent
+5. Report results back to the user
+6. Stay ready for the next request
 
-**Resume an existing session when:**
-- The user's request is a follow-up to a previous task
-- The request relates to the same project/directory as an active session
-- The user says "continue", "also", "and then", or references previous work
+IMPORTANT: You NEVER complete on your own. Do NOT output completion markers like "Done." or "Task completed." You finish individual tasks by reporting results, but you stay active waiting for the next request. Only the user can end your session (via /new or /cancel).
 
-**Start a new session when:**
-- The request is for a completely different project or task
-- The user explicitly asks to start fresh
-- No relevant active session exists
+## Handling Multiple Requests
+
+You may receive multiple requests while subagents are working. When you see "NEW USER REQUEST:":
+1. Assess if it relates to an existing subagent's work
+2. If yes, send follow-up to that subagent via tmux send-keys
+3. If no, spawn a new subagent for the new task
+4. You can have MANY subagents working in parallel
+
+## Subagent Tracking
+
+Keep mental track of your active subagents:
+- Which pane each is in
+- What task each is working on
+- What directory each is operating in
 
 To check active sessions:
 - List tmux panes: tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index} #{pane_current_path}"
@@ -364,7 +377,51 @@ When a subagent asks a question:
 - Safe/routine (mkdir, tests, format): answer automatically via send-keys
 - Risky (delete, production, credentials): escalate to the user
 
-When complete, summarize what was done across all sessions."""
+## Memories
+
+You have a persistent memory system at ~/Dropbox/takopi-memories/
+
+**Reading memories:**
+Before starting work, check if relevant memories exist:
+   ls ~/Dropbox/takopi-memories/
+Filenames are descriptive, so scan the list for anything relevant to the current task. Read relevant files to inform your approach.
+
+**Writing memories:**
+After completing tasks, consider whether anything learned should be recorded for future reference. Write a memory when you encounter:
+- Non-obvious project architecture or conventions
+- Solutions to tricky problems that took multiple attempts
+- User preferences or patterns you noticed
+- Important decisions and their rationale
+- Gotchas, edge cases, or things that broke unexpectedly
+- Useful commands or workflows specific to a project
+
+Do NOT write memories for:
+- Routine tasks that went smoothly
+- Information already in project READMEs or docs
+- Temporary state or one-off fixes
+- Obvious or widely-known information
+
+**File naming:**
+Use descriptive kebab-case names that will make sense when scanning `ls` output:
+- `takopi-telegram-message-threading.md`
+- `happian-api-auth-flow-quirks.md`
+- `rob-prefers-explicit-error-handling.md`
+- `python-uv-workspace-gotchas.md`
+
+**Format:**
+Keep memories concise. Focus on what you'd want to know next time:
+
+```markdown
+# Title
+
+Context: [brief setup]
+
+Key insight: [the main thing to remember]
+
+Details: [if needed]
+```
+
+When a subagent completes a task, briefly report the result to the user, then stay ready for the next request."""
 
     def _shell_escape(self, s: str) -> str:
         """Escape a string for shell use."""
@@ -377,9 +434,15 @@ When complete, summarize what was done across all sessions."""
     async def _poll_loop(
         self, state: LiaisonStreamState
     ) -> AsyncIterator[TakopiEvent]:
-        """Main loop that monitors panes and handles events."""
+        """Main loop that monitors panes and handles events.
+
+        Captain's chair mode: The liaison stays alive indefinitely, waiting for
+        new requests via the inbox. Only explicit /new or /cancel ends it.
+        """
         iteration = 0
-        max_idle_iterations = 600  # 5 minutes at 0.5s intervals
+        idle_iterations = 0
+        # 30 minutes idle timeout as safety net (3600 * 0.5s)
+        max_idle_iterations = 3600
 
         while not state.completed:
             await asyncio.sleep(self.poll_interval_s)
@@ -392,6 +455,25 @@ When complete, summarize what was done across all sessions."""
                     resume=ResumeToken(engine=ENGINE, value=state.session_id or ""),
                 )
                 return
+
+            # Check inbox for new user requests (captain's chair pattern)
+            inbox_messages = await self._check_inbox(state)
+            for msg in inbox_messages:
+                idle_iterations = 0  # Reset idle counter on new work
+                # Send to liaison brain for dispatch
+                if "liaison_brain" in state.panes:
+                    await self._send_to_pane(
+                        state.panes["liaison_brain"],
+                        f"NEW USER REQUEST: {msg['text']}",
+                    )
+                    state.note_seq += 1
+                    yield state.factory.action_completed(
+                        action_id=f"liaison.inbox.{state.note_seq}",
+                        kind="note",
+                        title="New request received",
+                        ok=True,
+                        detail={"text": msg["text"][:100]},
+                    )
 
             # Capture and process output from all panes
             had_activity = False
@@ -421,20 +503,20 @@ When complete, summarize what was done across all sessions."""
                     for event in events:
                         yield event
 
-            # Check for completion signals
-            if self._check_completion(state):
-                state.completed = True
-                yield state.factory.completed(
-                    ok=True,
-                    answer=state.final_answer,
-                    resume=ResumeToken(engine=ENGINE, value=state.session_id or ""),
-                )
-                return
+            # Captain's chair: Do NOT auto-complete on task completion markers
+            # The liaison stays alive waiting for more requests
+            # Only explicit /new or /cancel (via state.completed) ends the session
 
-            # Timeout if no activity
-            if not had_activity and iteration > max_idle_iterations:
+            # Track idle time, but use generous timeout
+            if had_activity or inbox_messages:
+                idle_iterations = 0
+            else:
+                idle_iterations += 1
+
+            # Safety timeout after 30 min of no activity
+            if idle_iterations > max_idle_iterations:
                 yield state.factory.completed_error(
-                    error="Liaison timed out waiting for activity",
+                    error="Liaison timed out after 30 minutes of inactivity",
                     resume=ResumeToken(engine=ENGINE, value=state.session_id or ""),
                 )
                 return
@@ -442,6 +524,25 @@ When complete, summarize what was done across all sessions."""
             # Save session periodically
             if iteration % 20 == 0:
                 await self._save_session(state)
+
+    async def _check_inbox(self, state: LiaisonStreamState) -> list[dict[str, Any]]:
+        """Check for new messages in the coordination inbox."""
+        if state.coordination_folder is None:
+            return []
+
+        inbox = state.coordination_folder / "coordination" / "inbox"
+        if not inbox.exists():
+            return []
+
+        messages: list[dict[str, Any]] = []
+        for msg_file in sorted(inbox.glob("*.json")):
+            try:
+                msg = json.loads(msg_file.read_text())
+                messages.append(msg)
+                msg_file.unlink()  # Remove after reading
+            except Exception:
+                pass
+        return messages
 
     async def _check_tmux_health(self, state: LiaisonStreamState) -> bool:
         """Check if the tmux session is still alive."""
@@ -717,5 +818,6 @@ def build_runner(config: EngineConfig, _config_path: Path) -> Runner:
 BACKEND = EngineBackend(
     id="liaison",
     build_runner=build_runner,
-    install_cmd=None,  # No separate install needed
+    cli_cmd="tmux",  # Liaison requires tmux, not a separate CLI
+    install_cmd="brew install tmux",  # macOS install hint
 )

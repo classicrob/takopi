@@ -339,8 +339,9 @@ class TestBackend:
         runner = BACKEND.build_runner({}, Path("takopi.toml"))
         assert isinstance(runner, LiaisonRunner)
 
-    def test_backend_no_install_cmd(self) -> None:
-        """Backend should have no install command."""
+    def test_backend_install_cmd(self) -> None:
+        """Backend should have tmux install hint."""
         from takopi.runners.liaison import BACKEND
 
-        assert BACKEND.install_cmd is None
+        # Liaison requires tmux, provides install hint for macOS
+        assert BACKEND.install_cmd == "brew install tmux"

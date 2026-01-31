@@ -21,6 +21,7 @@ from .presenter import Presenter
 from .markdown import render_event_cli
 from .runner import Runner
 from .progress import ProgressTracker
+from .session_card import SessionCardBuilder, SessionCardState
 from .transport import (
     ChannelId,
     MessageId,
@@ -256,6 +257,196 @@ class ProgressEdits:
             pass
 
 
+class SessionCardEdits:
+    """Session card variant of ProgressEdits for liaison sessions.
+
+    Uses SessionCardBuilder instead of ProgressTracker and renders
+    rich session cards with agent badges and activity feeds.
+    """
+
+    def __init__(
+        self,
+        *,
+        transport: Transport,
+        presenter: Any,  # TelegramPresenter with render_session_card method
+        channel_id: ChannelId,
+        progress_ref: MessageRef | None,
+        builder: SessionCardBuilder,
+        started_at: float,
+        clock: Callable[[], float],
+        last_rendered: RenderedMessage | None,
+        resume_formatter: Callable[[ResumeToken], str] | None = None,
+        context_line: str | None = None,
+    ) -> None:
+        self.transport = transport
+        self.presenter = presenter
+        self.channel_id = channel_id
+        self.progress_ref = progress_ref
+        self.builder = builder
+        self.started_at = started_at
+        self.clock = clock
+        self.last_rendered = last_rendered
+        self.resume_formatter = resume_formatter
+        self.context_line = context_line
+        self.event_seq = 0
+        self.rendered_seq = 0
+        self.signal_send, self.signal_recv = anyio.create_memory_object_stream(1)
+
+        # Set context if provided
+        if context_line:
+            builder.set_context(context_line)
+
+    async def run(self) -> None:
+        if self.progress_ref is None:
+            return
+        while True:
+            while self.rendered_seq == self.event_seq:
+                try:
+                    await self.signal_recv.receive()
+                except anyio.EndOfStream:
+                    return
+
+            seq_at_render = self.event_seq
+            now = self.clock()
+            state = self.builder.build()
+
+            # Use render_session_card if available, fallback to render_progress
+            if hasattr(self.presenter, "render_session_card"):
+                rendered = self.presenter.render_session_card(
+                    state, elapsed_s=now - self.started_at
+                )
+            else:
+                # Fallback - shouldn't happen with TelegramPresenter
+                from .progress import ProgressState
+
+                fallback_state = ProgressState(
+                    engine=self.builder.primary_engine,
+                    actions=tuple(),
+                    context_line=self.context_line,
+                    resume_line=state.resume_line,
+                )
+                rendered = self.presenter.render_progress(
+                    fallback_state, elapsed_s=now - self.started_at, label="working"
+                )
+
+            if rendered != self.last_rendered:
+                logger.debug(
+                    "transport.edit_message",
+                    channel_id=self.channel_id,
+                    message_id=self.progress_ref.message_id,
+                    rendered=rendered.text,
+                )
+                edited = await self.transport.edit(
+                    ref=self.progress_ref,
+                    message=rendered,
+                    wait=False,
+                )
+                if edited is not None:
+                    self.last_rendered = rendered
+
+            self.rendered_seq = seq_at_render
+
+    async def on_event(self, evt: TakopiEvent) -> None:
+        """Process a runner event and update the session card state."""
+        changed = False
+
+        if hasattr(evt, "type"):
+            event_type = evt.type
+
+            if event_type == "started":
+                self.builder.add_activity(
+                    self.builder.primary_engine,
+                    "action",
+                    "Starting session",
+                )
+                changed = True
+
+            elif event_type == "action":
+                # ActionEvent has phase: started/updated/completed
+                phase = getattr(evt, "phase", None)
+                action = getattr(evt, "action", None)
+                if action:
+                    kind = getattr(action, "kind", "action")
+                    title = getattr(action, "title", "")
+                    engine = getattr(evt, "engine", self.builder.primary_engine)
+                    ok = getattr(evt, "ok", True)
+                    detail = getattr(action, "detail", {}) or {}
+
+                    # For liaison, extract richer info from detail
+                    # Pane activity events have output_preview and role
+                    output_preview = detail.get("output_preview", "")
+                    pane_engine = detail.get("engine", engine)
+                    role = detail.get("role", "")
+
+                    if kind == "pane_activity" and output_preview:
+                        # Show a concise summary of what's happening in the pane
+                        # Take first non-empty line of output
+                        first_line = next(
+                            (l.strip() for l in output_preview.splitlines() if l.strip()),
+                            title,
+                        )
+                        if len(first_line) > 60:
+                            first_line = first_line[:57] + "..."
+                        summary = first_line or f"{pane_engine} ({role})"
+                        self.builder.add_activity(pane_engine, kind, summary)
+                        self.builder.increment_step(pane_engine)
+                        changed = True
+                    elif phase == "started":
+                        summary = title or kind
+                        self.builder.add_activity(engine, kind, summary)
+                        self.builder.increment_step(engine)
+                        changed = True
+                    elif phase == "completed":
+                        symbol = "\u2713" if ok else "\u2717"  # ✓ or ✗
+                        summary = f"{symbol} {title}" if title else f"{symbol} completed"
+                        self.builder.add_activity(engine, "complete" if ok else "error", summary)
+                        changed = True
+                    elif phase == "updated":
+                        # Progress updates - show current state
+                        summary = title or kind
+                        self.builder.add_activity(engine, kind, summary)
+                        changed = True
+
+            elif event_type == "input_request":
+                self.builder.add_pending_input(evt)
+                changed = True
+
+            elif event_type == "input_response":
+                request_id = getattr(evt, "request_id", None)
+                if request_id:
+                    self.builder.remove_pending_input(request_id)
+                    self.builder.add_activity(
+                        self.builder.primary_engine,
+                        "input_answered",
+                        "Input answered",
+                    )
+                changed = True
+
+            elif event_type == "completed":
+                ok = getattr(evt, "ok", True)
+                error = getattr(evt, "error", None)
+                self.builder.set_complete(ok=ok, error=error)
+
+                # Set resume line if available
+                resume = getattr(evt, "resume", None)
+                if resume and self.resume_formatter:
+                    self.builder.set_resume(self.resume_formatter(resume))
+
+                changed = True
+
+        if not changed:
+            return
+        if self.progress_ref is None:
+            return
+        self.event_seq += 1
+        try:
+            self.signal_send.send_nowait(None)
+        except anyio.WouldBlock:
+            pass
+        except (anyio.BrokenResourceError, anyio.ClosedResourceError):
+            pass
+
+
 @dataclass(frozen=True, slots=True)
 class ProgressMessageState:
     ref: MessageRef | None
@@ -299,6 +490,66 @@ async def send_initial_progress(
         last_rendered = initial_rendered
         logger.debug(
             "progress.sent",
+            channel_id=sent_ref.channel_id,
+            message_id=sent_ref.message_id,
+        )
+
+    return ProgressMessageState(
+        ref=sent_ref,
+        last_rendered=last_rendered,
+    )
+
+
+async def send_initial_session_card(
+    cfg: ExecBridgeConfig,
+    *,
+    channel_id: ChannelId,
+    reply_to: MessageRef,
+    builder: SessionCardBuilder,
+    progress_ref: MessageRef | None = None,
+    thread_id: ThreadId | None = None,
+) -> ProgressMessageState:
+    """Send the initial session card for liaison sessions."""
+    last_rendered: RenderedMessage | None = None
+
+    state = builder.build()
+
+    # Use render_session_card if available
+    if hasattr(cfg.presenter, "render_session_card"):
+        initial_rendered = cfg.presenter.render_session_card(
+            state,
+            elapsed_s=0.0,
+        )
+    else:
+        # Fallback to basic progress rendering
+        from .progress import ProgressState
+
+        fallback_state = ProgressState(
+            engine=builder.primary_engine,
+            actions=tuple(),
+            context_line=builder._context_line,
+            resume_line=builder._resume_line,
+        )
+        initial_rendered = cfg.presenter.render_progress(
+            fallback_state,
+            elapsed_s=0.0,
+            label="starting",
+        )
+
+    sent_ref, _ = await _send_or_edit_message(
+        cfg.transport,
+        channel_id=channel_id,
+        message=initial_rendered,
+        edit_ref=progress_ref,
+        reply_to=reply_to,
+        notify=False,
+        replace_ref=progress_ref,
+        thread_id=thread_id,
+    )
+    if sent_ref is not None:
+        last_rendered = initial_rendered
+        logger.debug(
+            "session_card.sent",
             channel_id=sent_ref.channel_id,
             message_id=sent_ref.message_id,
         )
@@ -461,37 +712,80 @@ async def handle_message(
     resume_strip = strip_resume_line or is_resume_line
     runner_text = _strip_resume_lines(incoming.text, is_resume_line=resume_strip)
 
-    progress_tracker = ProgressTracker(engine=runner.engine)
-
     user_ref = MessageRef(
         channel_id=incoming.channel_id,
         message_id=incoming.message_id,
     )
-    progress_state = await send_initial_progress(
-        cfg,
-        channel_id=incoming.channel_id,
-        reply_to=user_ref,
-        label="starting",
-        tracker=progress_tracker,
-        progress_ref=progress_ref,
-        resume_formatter=runner.format_resume,
-        context_line=context_line,
-        thread_id=incoming.thread_id,
-    )
-    progress_ref = progress_state.ref
 
-    edits = ProgressEdits(
-        transport=cfg.transport,
-        presenter=cfg.presenter,
-        channel_id=incoming.channel_id,
-        progress_ref=progress_ref,
-        tracker=progress_tracker,
-        started_at=started_at,
-        clock=clock,
-        last_rendered=progress_state.last_rendered,
-        resume_formatter=runner.format_resume,
-        context_line=context_line,
-    )
+    # Detect liaison sessions and use session card rendering
+    use_session_card = runner.engine == "liaison"
+
+    # Initialize tracking and edits based on session type
+    progress_tracker: ProgressTracker | None = None
+    session_card_builder: SessionCardBuilder | None = None
+    edits: ProgressEdits | SessionCardEdits
+
+    if use_session_card:
+        # Use session card for liaison
+        session_card_builder = SessionCardBuilder(
+            session_id=f"liaison_{int(started_at * 1000)}",
+            started_at=started_at,
+            primary_engine=runner.engine,
+        )
+        if context_line:
+            session_card_builder.set_context(context_line)
+
+        progress_state = await send_initial_session_card(
+            cfg,
+            channel_id=incoming.channel_id,
+            reply_to=user_ref,
+            builder=session_card_builder,
+            progress_ref=progress_ref,
+            thread_id=incoming.thread_id,
+        )
+        progress_ref = progress_state.ref
+
+        edits = SessionCardEdits(
+            transport=cfg.transport,
+            presenter=cfg.presenter,
+            channel_id=incoming.channel_id,
+            progress_ref=progress_ref,
+            builder=session_card_builder,
+            started_at=started_at,
+            clock=clock,
+            last_rendered=progress_state.last_rendered,
+            resume_formatter=runner.format_resume,
+            context_line=context_line,
+        )
+    else:
+        # Use traditional progress tracking
+        progress_tracker = ProgressTracker(engine=runner.engine)
+
+        progress_state = await send_initial_progress(
+            cfg,
+            channel_id=incoming.channel_id,
+            reply_to=user_ref,
+            label="starting",
+            tracker=progress_tracker,
+            progress_ref=progress_ref,
+            resume_formatter=runner.format_resume,
+            context_line=context_line,
+            thread_id=incoming.thread_id,
+        )
+        progress_ref = progress_state.ref
+
+        edits = ProgressEdits(
+            transport=cfg.transport,
+            presenter=cfg.presenter,
+            channel_id=incoming.channel_id,
+            progress_ref=progress_ref,
+            tracker=progress_tracker,
+            started_at=started_at,
+            clock=clock,
+            last_rendered=progress_state.last_rendered,
+            resume_formatter=runner.format_resume,
+            context_line=context_line,
+        )
 
     running_task: RunningTask | None = None
     if running_tasks is not None and progress_ref is not None:
@@ -546,18 +840,32 @@ async def handle_message(
     elapsed = clock() - started_at
 
     if error is not None:
-        sync_resume_token(progress_tracker, outcome.resume)
         err_body = _format_error(error)
-        state = progress_tracker.snapshot(
-            resume_formatter=runner.format_resume,
-            context_line=context_line,
-        )
-        final_rendered = cfg.presenter.render_final(
-            state,
-            elapsed_s=elapsed,
-            status="error",
-            answer=err_body,
-        )
+
+        if use_session_card and session_card_builder:
+            session_card_builder.set_complete(ok=False, error=err_body)
+            if outcome.resume:
+                session_card_builder.set_resume(runner.format_resume(outcome.resume))
+            card_state = session_card_builder.build()
+            if hasattr(cfg.presenter, "render_session_card"):
+                final_rendered = cfg.presenter.render_session_card(
+                    card_state, elapsed_s=elapsed
+                )
+            else:
+                final_rendered = RenderedMessage(text=f"Error: {err_body}", extra={})
+        else:
+            sync_resume_token(progress_tracker, outcome.resume)
+            state = progress_tracker.snapshot(
+                resume_formatter=runner.format_resume,
+                context_line=context_line,
+            )
+            final_rendered = cfg.presenter.render_final(
+                state,
+                elapsed_s=elapsed,
+                status="error",
+                answer=err_body,
+            )
+
         logger.debug(
             "handle.error.rendered",
             error=err_body,
@@ -578,20 +886,34 @@ async def handle_message(
         return
 
     if outcome.cancelled:
-        resume = sync_resume_token(progress_tracker, outcome.resume)
+        if use_session_card and session_card_builder:
+            session_card_builder.set_cancelled()
+            if outcome.resume:
+                session_card_builder.set_resume(runner.format_resume(outcome.resume))
+            card_state = session_card_builder.build()
+            if hasattr(cfg.presenter, "render_session_card"):
+                final_rendered = cfg.presenter.render_session_card(
+                    card_state, elapsed_s=elapsed
+                )
+            else:
+                final_rendered = RenderedMessage(text="Cancelled", extra={})
+            resume = outcome.resume
+        else:
+            resume = sync_resume_token(progress_tracker, outcome.resume)
+            state = progress_tracker.snapshot(
+                resume_formatter=runner.format_resume,
+                context_line=context_line,
+            )
+            final_rendered = cfg.presenter.render_progress(
+                state,
+                elapsed_s=elapsed,
+                label="`cancelled`",
+            )
+
         logger.info(
             "handle.cancelled",
             resume=resume.value if resume else None,
             elapsed_s=elapsed,
-        )
-        state = progress_tracker.snapshot(
-            resume_formatter=runner.format_resume,
-            context_line=context_line,
-        )
-        final_rendered = cfg.presenter.render_progress(
-            state,
-            elapsed_s=elapsed,
-            label="`cancelled`",
         )
         await send_result_message(
             cfg,
@@ -628,26 +950,65 @@ async def handle_message(
     resume_token = completed.resume or outcome.resume
     if resume_token is not None:
         resume_value = resume_token.value
-    logger.info(
-        "runner.completed",
-        ok=run_ok,
-        error=run_error,
-        answer_len=len(final_answer or ""),
-        elapsed_s=round(elapsed, 2),
-        action_count=progress_tracker.action_count,
-        resume=resume_value,
-    )
-    sync_resume_token(progress_tracker, completed.resume or outcome.resume)
-    state = progress_tracker.snapshot(
-        resume_formatter=runner.format_resume,
-        context_line=context_line,
-    )
-    final_rendered = cfg.presenter.render_final(
-        state,
-        elapsed_s=elapsed,
-        status=status,
-        answer=final_answer,
-    )
+
+    if use_session_card and session_card_builder:
+        # Get action count from session card builder
+        action_count = sum(
+            badge.step_count for badge in session_card_builder._badges.values()
+        )
+        logger.info(
+            "runner.completed",
+            ok=run_ok,
+            error=run_error,
+            answer_len=len(final_answer or ""),
+            elapsed_s=round(elapsed, 2),
+            action_count=action_count,
+            resume=resume_value,
+        )
+
+        # Mark complete with appropriate status
+        if run_ok is False:
+            session_card_builder.set_complete(ok=False, error=run_error or final_answer)
+        else:
+            session_card_builder.set_complete(ok=True)
+
+        # Set resume line if available
+        if resume_token:
+            session_card_builder.set_resume(runner.format_resume(resume_token))
+
+        card_state = session_card_builder.build()
+        if hasattr(cfg.presenter, "render_session_card"):
+            final_rendered = cfg.presenter.render_session_card(
+                card_state, elapsed_s=elapsed
+            )
+        else:
+            final_rendered = cfg.presenter.render_final(
+                None,
+                elapsed_s=elapsed,
+                status=status,
+                answer=final_answer,
+            )
+    else:
+        logger.info(
+            "runner.completed",
+            ok=run_ok,
+            error=run_error,
+            answer_len=len(final_answer or ""),
+            elapsed_s=round(elapsed, 2),
+            action_count=progress_tracker.action_count,
+            resume=resume_value,
+        )
+        sync_resume_token(progress_tracker, completed.resume or outcome.resume)
+        state = progress_tracker.snapshot(
+            resume_formatter=runner.format_resume,
+            context_line=context_line,
+        )
+        final_rendered = cfg.presenter.render_final(
+            state,
+            elapsed_s=elapsed,
+            status=status,
+            answer=final_answer,
+        )
     logger.debug(
         "handle.final.rendered",
         rendered=final_rendered.text,
